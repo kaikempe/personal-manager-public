@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym">
+<meta name="theme-color" content="#121214">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Gym log</title>
+<style>
+:root{--bg:#121214;--card:#1c1c20;--line:#2c2c32;--fg:#f2f2f5;--dim:#9a9aa5;--ok:#5ede80;--warn:#f5b84b;--bad:#ff6b6b;--btn:#2a2a31}
+@media (prefers-color-scheme:light){:root{--bg:#f4f4f7;--card:#fff;--line:#dcdce2;--fg:#17171a;--dim:#6b6b76;--ok:#16a34a;--warn:#b7791f;--bad:#d64545;--btn:#e8e8ee}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.35 -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 16px calc(90px + env(safe-area-inset-bottom))}
+h1{font-size:26px;margin:18px 0 4px}h2{font-size:13px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:22px 0 8px;font-weight:600}
+.dim{color:var(--dim)}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.small{font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.row{display:flex;gap:8px;align-items:center}.grow{flex:1}.between{justify-content:space-between}.wrap{flex-wrap:wrap}
+button,.btn{font:inherit;color:var(--fg);background:var(--btn);border:0;border-radius:12px;padding:12px 14px;min-height:48px}
+button:active{opacity:.6}button.pri{background:var(--ok);color:#06210f;font-weight:700}button.wide{width:100%}
+button.ghost{background:none;border:1px solid var(--line)}button.sm{min-height:36px;padding:6px 10px;font-size:14px}
+.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom));gap:6px}
+.tabs button{flex:1;background:none;min-height:44px;font-size:14px}.tabs button.on{color:var(--ok);font-weight:700}
+.set{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)}
+.set.cur{display:block}
+.step{display:flex;align-items:center;gap:6px}.step input{width:74px;text-align:center;font:inherit;font-size:22px;font-weight:700;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 0}
+.step button{width:44px;padding:0;font-size:22px}
+.lbl{font-size:12px;color:var(--dim);margin-bottom:2px}
+#rest{position:fixed;left:16px;right:16px;bottom:calc(66px + env(safe-area-inset-bottom));background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin:0 6px 6px 0}
+.chip.on{background:var(--ok);color:#06210f;border-color:var(--ok)}
+textarea{width:100%;height:220px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;font:13px ui-monospace,monospace;padding:8px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin:12px 0}.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+.tile small{display:block;color:var(--dim);font-size:12px}.tile b{font-size:20px}.tile i{font-style:normal;font-size:13px;color:var(--dim);margin-left:2px}
+.tip{padding:8px 6px 0;font-size:14px}.hrow{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.hrow:first-child{border-top:0}.hrow .r{text-align:right}
+.exgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.exc{text-align:left;display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:0}
+.exbest{font-size:22px;font-weight:700;margin:6px 0}.exbest small{display:block;font-size:11px;font-weight:400;color:var(--dim)}.prchip{background:var(--ok);color:#06210f;font-size:11px;font-weight:700;border-radius:999px;padding:2px 7px}
+.wscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -6px;padding:0 6px;scrollbar-width:none}.wscroll::-webkit-scrollbar{display:none}
+.weeks{display:flex;gap:6px;align-items:flex-end;width:max-content}
+.wbar{display:flex;flex-direction:column;align-items:center;gap:4px;width:44px;flex:none}.wbar[data-act]{cursor:pointer}
+.wbar b{font-size:13px;height:16px;line-height:16px}.wb{width:100%;height:84px;display:flex;align-items:flex-end;border-bottom:1px solid var(--line)}
+.wb i{display:block;width:100%;background:var(--ok);opacity:.55;border-radius:5px 5px 0 0}.wbar.now i{opacity:1}
+.wbar small{color:var(--dim);font-size:10px;white-space:nowrap;height:12px}.wbar.now small{color:var(--fg);font-weight:600}.wbar small.yr{font-weight:600;color:var(--fg)}.wbar[data-act]:active{opacity:.6}
+.dayc{padding:12px 14px}.dayh{cursor:pointer}.chev{font-size:24px;color:var(--dim);transition:transform .15s}.chev.open{transform:rotate(90deg)}
+.mv{min-height:34px;width:38px;padding:0;font-size:18px;line-height:1}
+svg{display:block}
+#rest[hidden]{display:none}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="rest" hidden><span>Rest</span><b id="rt">0:00</b></div>
+<nav class="tabs" id="tabs"></nav>
+
+<script>
+// ---------- storage (localStorage; every access guarded: it can be blocked or empty) ----------
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const S = {
+  plan: ls.get("plan", null),          // imported from plan.json: {days:{"Day 1":{title,exercises:[]}}, schedule:[]}
+  hist: ls.get("hist", {}),            // imported from history.json: name -> [{id,date,skipped,sets}]
+  sessions: ls.get("sessions", []),    // finished on this phone (kept for "last time" and re-sending)
+  draft: ls.get("draft", null)         // workout in progress
+};
+let view = S.draft ? "workout" : "home", openEx = null, cur = {}, msg = "", addSel = null, addSets = 3;
+const save = k => ls.set(k, S[k]);
+
+// ---------- helpers ----------
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const hhmm = () => new Date().toTimeString().slice(0, 5);
+const fmt = n => n == null ? "BW" : String(+n.toFixed(2));
+const setTxt = s => `${fmt(s.w)}×${s.reps}`;
+const e1rm = s => s.w ? s.w * (1 + s.reps / 30) : s.reps;   // Epley; bodyweight sets rank by reps
+const lowReps = r => parseInt(String(r)) || 8;
+const DB = /\b(db|dumbbell|hammer|zottman|forearm|reverse curls|lateral raises|bulgarian|pronation|leg curls)/i;
+const stepOf = name => /leg press/i.test(name) ? 5 : /cable|pulldown|pushdown/i.test(name) ? 2.5 : DB.test(name) ? 2 : 2.5;   // kg per +/- tap: leg press 5, cable and barbell/machines 2.5, dumbbells 2
+
+function past(name) {      // newest first, only sessions where something was logged
+  const rows = [], seen = new Set();
+  for (const s of S.sessions) {
+    const e = s.exercises.find(x => x.name === name);
+    seen.add(s.id);
+    const mac = (S.hist[name] || []).find(r => r.id === s.id) || {};
+    if (e && e.sets.length) rows.push({ id: s.id, date: s.date, day: s.day, sets: e.sets, prior: mac.prior, via: mac.via, ...(s.exercises.length >= 4 ? { pos: s.exercises.indexOf(e) + 1, of: s.exercises.length } : {}) });
+  }
+  for (const r of S.hist[name] || []) if (!seen.has(r.id) && r.sets.length) rows.push(r);
+  return rows.sort((a, b) => b.date.localeCompare(a.date));
+}
+const allNames = () => {
+  const n = new Set(S.plan ? Object.values(S.plan.days).flatMap(d => d.exercises.map(e => e.name)) : []);
+  Object.keys(S.hist).forEach(k => n.add(k));
+  S.sessions.forEach(s => s.exercises.forEach(e => n.add(e.name)));
+  return [...n];
+};
+
+// ---------- workout ----------
+function start(day) {
+  S.draft = { id: `${today()}-${day.replace(" ", "").toLowerCase()}-${Date.now().toString(36)}`, date: today(), day, started: hhmm(), lastSet: null, ex: {} };
+  for (const e of S.plan.days[day].exercises) S.draft.ex[e.name] = { sets: [], skipped: false };
+  save("draft"); view = "workout"; openEx = S.plan.days[day].exercises[0].name; cur = {}; keepAwake(); render();
+}
+const planEx = () => {   // plan + added exercises, in the order chosen during this workout (draft.order), new ones last
+  const all = [...S.plan.days[S.draft.day].exercises, ...(S.draft.extras || [])], o = S.draft.order;
+  return o ? all.slice().sort((a, b) => (o.indexOf(a.name) + 1 || 1e9) - (o.indexOf(b.name) + 1 || 1e9)) : all;
+};
+function moveEx(name, dir) {
+  const names = planEx().map(e => e.name), i = names.indexOf(name), j = i + dir;
+  if (i < 0 || j < 0 || j >= names.length) return;
+  [names[i], names[j]] = [names[j], names[i]];
+  S.draft.order = names; save("draft"); render();
+}
+function templates() {   // every exercise from any day (first plan entry wins), then ones only seen in history
+  const m = new Map();
+  for (const [d, v] of Object.entries(S.plan.days)) for (const e of v.exercises) if (!m.has(e.name)) m.set(e.name, { ...e, day: d });
+  for (const n of allNames()) if (!m.has(n)) m.set(n, { name: n, sets: 3, reps: "10", weight: null, day: "Other" });
+  return m;
+}
+function addExtra(name, sets) {
+  if (!S.draft.ex[name]) {
+    const t = templates().get(name) || { name, reps: "10", weight: null };
+    (S.draft.extras = S.draft.extras || []).push({ name, sets, reps: t.reps || "10", weight: t.weight ?? null, weight_note: t.weight_note, extra: true });
+    S.draft.ex[name] = { sets: [], skipped: false };
+  }
+  openEx = name; addSel = null; view = "workout"; save("draft"); render();
+}
+function defaults(e) {     // what the next set is prefilled with: last time's same-numbered set, else the plan
+  const d = S.draft.ex[e.name], i = d.sets.length, last = past(e.name)[0];
+  const ref = last && (last.sets[i] || last.sets[last.sets.length - 1]);
+  if (ref && e.weight && ref.w != null && e.weight > ref.w) return { w: e.weight, reps: lowReps(e.reps) };   // plan weight raised since last time
+  return ref ? { w: ref.w, reps: ref.reps } : { w: e.weight, reps: lowReps(e.reps) };
+}
+function logSet(name, same) {
+  const e = planEx().find(x => x.name === name), d = S.draft.ex[name];
+  const c = same ? defaults(e) : (cur[name] || defaults(e));
+  d.sets.push({ w: c.w, reps: c.reps, same: !!same }); d.skipped = false;
+  delete cur[name]; S.draft.lastSet = Date.now(); save("draft");
+  if (e.sets && d.sets.length >= e.sets) { const i = planEx().indexOf(e); openEx = (planEx()[i + 1] || e).name; }
+  render();
+}
+function bump(name, field, dir) {
+  const e = planEx().find(x => x.name === name), c = cur[name] = cur[name] || { ...defaults(e) };
+  if (field === "w") c.w = Math.max(0, +(((c.w ?? 0) + dir * stepOf(name)).toFixed(2)));
+  else c.reps = Math.max(0, c.reps + dir);
+  render();
+}
+function setVal(name, field, v) {
+  const e = planEx().find(x => x.name === name), c = cur[name] = cur[name] || { ...defaults(e) };
+  const n = parseFloat(String(v).replace(",", "."));
+  if (!isNaN(n)) c[field] = field === "reps" ? Math.round(n) : n;
+}
+function undo(name) { S.draft.ex[name].sets.pop(); delete cur[name]; save("draft"); render(); }
+function skip(name) {
+  const d = S.draft.ex[name]; d.skipped = !d.skipped; save("draft");
+  if (d.skipped) { const i = planEx().findIndex(x => x.name === name); openEx = (planEx()[i + 1] || planEx()[i]).name; }
+  render();
+}
+
+async function finishAndSend() {
+  const D = S.draft;
+  const sess = { id: D.id, date: D.date, day: D.day, started: D.started, ended: hhmm(), feel: D.feel ?? 3, ...(D.note && D.note.trim() ? { note: D.note.trim().slice(0, 200) } : {}),
+    exercises: planEx().map(e => ({ name: e.name, skipped: D.ex[e.name].sets.length === 0, sets: D.ex[e.name].sets })) };
+  S.sessions.unshift(sess); save("sessions");
+  S.draft = null; ls.set("draft", null); view = "home"; releaseAwake();
+  render();
+  await send(sess);
+}
+async function upload(sess) {   // POST to the Netlify inbox; the Mac pulls it from there. True when stored.
+  const token = ls.get("token", null); if (!token) return false;
+  try {
+    const r = await fetch("/api/session", { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" }, body: JSON.stringify(sess) });
+    if (!r.ok) { msg = r.status === 401 ? "Token rejected: open the setup link again." : "Upload failed (" + r.status + "). Tap Send to retry."; return false; }
+    sess.sent = true; save("sessions"); msg = "Saved."; return true;
+  } catch { msg = "Offline: the workout is kept and will upload when you are back online."; return false; }
+}
+async function uploadPending() { for (const s of S.sessions.filter(x => !x.sent)) if (!(await upload(s))) break; render(); }
+async function send(sess) {   // upload, else share sheet -> "Save to Files" -> Manager Gym/sessions
+  if (ls.get("token", null)) { await upload(sess); render(); return; }
+  const file = new File([JSON.stringify(sess, null, 2)], `${sess.id}.json`, { type: "application/json" });
+  if (ls.get("useShortcut", false)) {   // hands the JSON to the iOS Shortcut "Gym save"; it comes back with ?sent=<id>
+    const back = location.origin + location.pathname;
+    location.href = `shortcuts://x-callback-url/run-shortcut?name=${encodeURIComponent("Gym save")}&input=text&text=${encodeURIComponent(JSON.stringify(sess))}`
+      + `&x-success=${encodeURIComponent(back + "?sent=" + sess.id)}&x-error=${encodeURIComponent(back + "?failed=" + sess.id)}`;
+    return;
+  }
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Gym ${sess.date}` });
+      sess.sent = true; save("sessions"); render(); return;
+    }
+  } catch (e) { if (e.name === "AbortError") return; }
+  download(file.name, file.type, JSON.stringify(sess, null, 2)); sess.sent = true; save("sessions"); render();
+}
+function download(name, type, text) {
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
+}
+function discard() { if (confirm("Throw away this workout?")) { S.draft = null; ls.set("draft", null); view = "home"; releaseAwake(); render(); } }
+
+let wake = null;
+async function keepAwake() { try { wake = await navigator.wakeLock.request("screen"); } catch {} }
+function releaseAwake() { try { wake && wake.release(); } catch {} wake = null; }
+document.addEventListener("visibilitychange", () => { if (S.draft && document.visibilityState === "visible") keepAwake(); });
+
+// ---------- import / export ----------
+async function importFiles(files) {
+  msg = "";
+  for (const f of files) {
+    try {
+      const j = JSON.parse(await f.text());
+      if (j.days) { S.plan = j; save("plan"); msg += `Plan loaded (${Object.keys(j.days).length} days). `; }
+      else if (j && typeof j === "object" && !Array.isArray(j)) { S.hist = j; save("hist"); msg += `History loaded (${Object.keys(j).length} exercises). `; }
+      else msg += `${f.name}: not recognised. `;
+    } catch { msg += `${f.name}: not JSON. `; }
+  }
+  render();
+}
+function geminiText() {   // keep identical to scripts/gym_export.py
+  const lines = ["My gym log (weight kg × reps), newest first, last 8 sessions per exercise. Compare my progress per exercise and say where I should add weight or reps."];
+  for (const n of allNames().sort()) {
+    const rows = past(n).slice(0, 8);
+    if (rows.length) lines.push(`${n}: ` + rows.map(r => `${r.date} ${r.sets.map(s => `${fmt(s.w)}x${s.reps}`).join(", ")}`).join(" | "));
+  }
+  return lines.join("\n");
+}
+function csv() {
+  const out = ["date,exercise,set,weight,reps"];
+  const rows = [];
+  for (const n of allNames()) for (const r of past(n)) r.sets.forEach((s, i) => rows.push(`${r.date},"${n}",${i + 1},${s.w ?? ""},${s.reps}`));
+  return out.concat(rows.sort()).join("\n");
+}
+async function copyGemini() {
+  const t = geminiText();
+  try { await navigator.clipboard.writeText(t); msg = "Copied. Paste it into Gemini."; } catch { msg = "Copy blocked: select the text below."; }
+  render();
+}
+
+// ---------- views ----------
+function spark(vals) {
+  if (vals.length < 2) return "";
+  const W = 90, H = 26, lo = Math.min(...vals), hi = Math.max(...vals), r = hi - lo || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1) * W).toFixed(1)},${(H - 3 - (v - lo) / r * (H - 6)).toFixed(1)}`).join(" ");
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+
+function vHome() {
+  if (!S.plan) return `<h1>Gym log</h1><div class="card">${msg || "Loading your plan…"}<div style="margin-top:10px"><button data-act="syncnow">Load plan</button></div></div>${keyBox()}`;
+  const sch = (S.plan.schedule || []).find(s => s.date === today());
+  const days = Object.keys(S.plan.days);
+  const unsent = S.sessions.filter(s => !s.sent);
+  return `<h1>Gym log</h1><div class="dim">${new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</div>
+  ${sch ? `<div class="card"><div class="lbl">Today, ${sch.start}–${sch.end}</div><b>${sch.day}: ${esc(S.plan.days[sch.day].title)}</b>
+     <button class="pri wide" style="margin-top:12px" data-act="start" data-day="${sch.day}">Start workout</button></div>`
+    : `<div class="card dim">No gym scheduled today.</div>`}
+  <h2>${sch ? "Or another day" : "Start a day"}</h2>
+  ${days.map(d => `<button class="chip" data-act="start" data-day="${d}">${d}: ${esc(S.plan.days[d].title)}</button>`).join("")}
+  ${unsent.length ? `<h2>Waiting to upload</h2>${unsent.map(s => `<div class="card row between"><span>${s.date} ${s.day}</span><button class="sm" data-act="send" data-id="${s.id}">Upload now</button></div>`).join("")}` : ""}
+  ${ls.get("token", null) ? `<div class="small dim" style="margin-top:22px">${msg || "Synced with your Mac: plan, history and workouts update by themselves."}</div>`
+    : keyBox()}`;
+}
+const keyBox = () => `<h2>Turn on upload</h2><div class="card"><div class="small dim">Paste your setup key (or the whole setup link) so finished workouts upload to your Mac and your history syncs.</div>
+  <div class="row" style="margin-top:8px"><input id="keyin" class="grow" placeholder="Setup key" autocapitalize="off" autocorrect="off" style="font:inherit;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"><button data-act="savekey">Save</button></div></div>`;
+const importBtn = () => `<label class="btn ghost" style="display:inline-block">Import plan / history<input type="file" accept=".json,application/json" multiple hidden data-act="import"></label>`;
+
+function vWorkout() {
+  const D = S.draft, ex = planEx();
+  const done = ex.filter(e => D.ex[e.name].sets.length >= (e.sets || 1) || D.ex[e.name].skipped).length;
+  return `<div class="row between"><h1>${D.day}</h1><span class="dim">${done}/${ex.length} done</span></div>
+  ${ex.map(e => card(e)).join("")}
+  <button class="wide" style="margin-top:14px" data-act="addview">+ Add exercise</button>
+  <button class="pri wide" style="margin-top:8px" data-act="finish">Finish workout</button>
+  <button class="ghost wide" style="margin-top:8px" data-act="discard">Discard</button>`;
+}
+function card(e) {
+  const d = S.draft.ex[e.name], last = past(e.name)[0], isOpen = openEx === e.name;
+  const n = d.sets.length, tgt = `${e.sets ?? "?"} × ${esc(e.reps)}${e.weight ? ` @ ${fmt(e.weight)} kg` : ""}${e.weight_note ? ` (${esc(e.weight_note)})` : ""}`;
+  const status = d.skipped ? `<span class="warn">skipped</span>` : n >= (e.sets || 1) ? `<span class="ok">✓ ${n} sets</span>` : n ? `<span>${n}/${e.sets}</span>` : "";
+  let h = `<div class="card"><div class="row between" data-act="open" data-name="${esc(e.name)}"><b>${esc(e.name)}</b><span class="row" style="gap:4px">${status}<button class="sm ghost mv" aria-label="Move up" data-act="mvup" data-name="${esc(e.name)}">↑</button><button class="sm ghost mv" aria-label="Move down" data-act="mvdn" data-name="${esc(e.name)}">↓</button></span></div>`;
+  if (!isOpen) return h + `</div>`;
+  h += `<div class="small dim">${tgt}</div><div class="small dim">Last: ${last ? last.date.slice(5) + "  " + last.sets.map(setTxt).join("  ") + (place(last) ? `  · done ${place(last)}${load(last) ? ", " + load(last) : ""}` : "") : "none"}</div>`;
+  d.sets.forEach((s, i) => h += `<div class="set"><span>Set ${i + 1}</span><b>${fmt(s.w)} × ${s.reps}${s.same ? ' <span class="dim small">same</span>' : ""}</b></div>`);
+  if (!d.skipped) {
+    const c = cur[e.name] || defaults(e);
+    h += `<div class="set cur"><div class="lbl">Set ${n + 1}${e.sets && n >= e.sets ? " (extra)" : ""}</div>
+      <div class="row between wrap">
+       <div><div class="lbl">kg</div><div class="step"><button data-act="bump" data-name="${esc(e.name)}" data-f="w" data-d="-1">−</button><input inputmode="decimal" value="${fmt(c.w)}" data-act="setv" data-name="${esc(e.name)}" data-f="w"><button data-act="bump" data-name="${esc(e.name)}" data-f="w" data-d="1">+</button></div></div>
+       <div><div class="lbl">reps</div><div class="step"><button data-act="bump" data-name="${esc(e.name)}" data-f="reps" data-d="-1">−</button><input inputmode="numeric" value="${c.reps}" data-act="setv" data-name="${esc(e.name)}" data-f="reps"><button data-act="bump" data-name="${esc(e.name)}" data-f="reps" data-d="1">+</button></div></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="grow" data-act="log" data-name="${esc(e.name)}">Log set</button>
+      <button class="pri grow" data-act="same" data-name="${esc(e.name)}">Same: ${setTxt(defaults(e))}</button></div></div>`;
+  }
+  h += `<div class="row" style="margin-top:8px">${n ? `<button class="sm ghost" data-act="undo" data-name="${esc(e.name)}">Undo set</button>` : ""}<button class="sm ghost" data-act="skip" data-name="${esc(e.name)}">${d.skipped ? "Not skipped" : "Skip exercise"}</button></div></div>`;
+  return h;
+}
+
+function vAdd() {
+  const have = new Set(planEx().map(e => e.name)), tm = templates(), groups = {};
+  for (const e of tm.values()) if (!have.has(e.name)) (groups[e.day] = groups[e.day] || []).push(e);
+  const sel = addSel && tm.get(addSel);
+  return `<div class="row between"><h1>Add exercise</h1><button class="sm ghost" data-act="back">Cancel</button></div>
+  ${sel ? `<div class="card"><b>${esc(sel.name)}</b><div class="lbl" style="margin-top:10px">How many sets</div>
+    <div class="step"><button data-act="addsets" data-d="-1">−</button><input inputmode="numeric" value="${addSets}" data-act="addsetsv"><button data-act="addsets" data-d="1">+</button></div>
+    <button class="pri wide" style="margin-top:12px" data-act="addgo">Add to workout</button></div>` : `<div class="dim">Pick an exercise, then say how many sets.</div>`}
+  ${Object.keys(groups).sort().map(d => `<h2>${d === "Other" ? "Other" : d + ": " + esc(S.plan.days[d].title)}</h2>
+    ${groups[d].map(e => `<button class="chip ${addSel === e.name ? "on" : ""}" data-act="addpick" data-name="${esc(e.name)}">${esc(e.name)}</button>`).join("")}`).join("")}
+  <h2>New exercise</h2><div class="row"><input id="newex" class="grow" placeholder="Name" style="font:inherit;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)"><button data-act="addnew">Add</button></div>`;
+}
+
+function vFinish() {
+  const D = S.draft;
+  return `<h1>Finish</h1><div class="dim">Anything wrong here? Tap Back and log it. Missing exercises are saved as skipped.</div>
+  ${planEx().map(e => { const n = D.ex[e.name].sets.length, full = n >= (e.sets || 1);
+    return `<div class="card row between"><span>${esc(e.name)}</span>${n === 0 ? `<b class="warn">skipped</b>` : full ? `<b class="ok">${n}/${e.sets} ✓</b>` : `<b class="warn">${n}/${e.sets} sets</b>`}</div>`; }).join("")}
+  <h2>How did you feel?</h2>
+  <div class="row">${[[1, "Rough"], [2, "Off"], [3, "OK"], [4, "Good"], [5, "Great"]].map(([n, l]) => `<button class="grow ${(D.feel ?? 3) === n ? "pri" : ""}" style="padding:8px 2px" data-act="feel" data-v="${n}">${n}<div class="small">${l}</div></button>`).join("")}</div>
+  <input id="feelnote" data-act="feelnote" maxlength="200" placeholder="Note (optional): slept badly, sore shoulder…" value="${esc(D.note || "")}" style="width:100%;margin-top:8px;font:inherit;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)">
+  <button class="pri wide" style="margin-top:14px" data-act="save">Save workout</button>
+  <button class="ghost wide" style="margin-top:8px" data-act="back">Back</button>
+  <div class="small dim" style="margin-top:8px">${ls.get("token", null) ? "Save uploads the workout to your Mac automatically." : "Save opens the share sheet: choose <b>Save to Files &gt; Manager Gym &gt; sessions</b>."}</div>`;
+}
+
+// ---------- progress (same layout as the Mac dashboard's Gym page) ----------
+const ord = n => n + (["th", "st", "nd", "rd"][(n % 100 - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th");
+const load = r => r.prior ? `after ${+r.prior} sets on ${(r.via || []).join(", ")}` : "";   // earlier work on the same muscles (calculated on the Mac)
+const place = r => r.pos ? `${ord(r.pos)} of ${r.of}` : "";   // when in the workout it was done
+const dfmt = d => new Date(d + "T12:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const dfull = d => new Date(d + "T12:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+const isoWeek = d => { const t = new Date(d + "T12:00"); t.setDate(t.getDate() + 3 - (t.getDay() + 6) % 7); const y = t.getFullYear(), j = new Date(y, 0, 4);
+  return `${y}-W${String(1 + Math.round(((t - j) / 864e5 - 3 + (j.getDay() + 6) % 7) / 7)).padStart(2, "0")}`; };
+const runs = sets => { const out = []; sets.forEach(x => { const t = fmt(x.w) + "×" + x.reps, l = out[out.length - 1]; l && l[0] === t ? l[1]++ : out.push([t, 1]); });
+  return out.map(([t, c]) => c > 1 ? `${c} × ${t}` : t).join("  ·  "); };   // 4 identical sets -> "4 × 28×8"
+let wsLeft = null, progEx = null, progWeek = null, progSel = null, progDays = new Set();
+
+function timeline(name) {   // oldest first, one point per date (same-day sessions merged)
+  const by = {};
+  for (const r of past(name).slice().reverse()) {
+    const day = r.day || (S.sessions.find(s => s.id === r.id) || {}).day || "";
+    const o = by[r.date] = by[r.date] || { date: r.date, day, pos: r.pos, of: r.of, prior: r.prior, via: r.via, sets: [] };
+    o.sets.push(...r.sets);
+  }
+  return Object.values(by).sort((a, b) => a.date.localeCompare(b.date)).map(o => {
+    const strength = Math.max(...o.sets.map(e1rm));
+    return { ...o, strength: +strength.toFixed(1), volume: Math.round(o.sets.reduce((n, x) => n + (x.w || 0) * x.reps, 0)) };
+  });
+}
+function daySessions() {    // date -> {date, day, feel, note, ex:[{name,sets}]} from phone sessions + history
+  const by = {};
+  const add = (date, day, name, sets, extra) => { const o = by[date] = by[date] || { date, day, ex: [] }; Object.assign(o, extra || {});
+    if (!o.day) o.day = day; const e = o.ex.find(x => x.name === name); e ? e.sets.push(...sets) : o.ex.push({ name, sets: sets.slice() }); };
+  const seen = new Set();
+  for (const s of S.sessions) { seen.add(s.id);
+    by[s.date] = by[s.date] || { date: s.date, day: s.day, ex: [] };
+    if (s.feel) by[s.date].feel = s.feel; if (s.note) by[s.date].note = s.note;
+    for (const e of s.exercises) if (e.sets.length) add(s.date, s.day, e.name, e.sets); }
+  for (const [name, rows] of Object.entries(S.hist)) for (const r of rows) if (!seen.has(r.id) && r.sets.length) add(r.date, r.day || "", name, r.sets);
+  return Object.values(by).sort((a, b) => a.date.localeCompare(b.date));
+}
+const planOrder = d => (S.plan && S.plan.days[d] ? S.plan.days[d].exercises.map(e => e.name) : []);
+
+function pChart(h) {
+  const W = Math.min(innerWidth - 32 - 24, 520), H = 180, L = 36, R = 8, T = 12, B = 26, PX = 14, ys = h.map(r => r.strength);
+  const dmin = Math.min(...ys), dmax = Math.max(...ys), raw = (dmax - dmin || dmax * .1 || 1) / 3, mag = 10 ** Math.floor(Math.log10(raw));
+  const tick = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v >= raw);
+  let lo = Math.floor(dmin / tick) * tick, hi = Math.ceil(dmax / tick) * tick; if (lo === dmin) lo -= tick; if (hi === dmax) hi += tick;
+  const ticks = []; for (let v = lo; v <= hi + 1e-9; v += tick) ticks.push(+v.toFixed(6));
+  const X = i => L + PX + (i / (h.length - 1)) * (W - L - R - 2 * PX), Y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const sel = progSel != null && progSel < h.length ? progSel : h.length - 1, step = Math.ceil(h.length / 3);
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Estimated 1-rep max over sessions">
+    ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end" fill="var(--dim)" font-size="11">${+v.toFixed(2)}</text>`).join("")}
+    <polyline points="${h.map((r, i) => X(i).toFixed(1) + "," + Y(r.strength).toFixed(1)).join(" ")}" fill="none" stroke="var(--ok)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${h.map((r, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(r.strength).toFixed(1)}" r="${i === sel ? 6 : 3.5}" fill="${i === sel ? "var(--ok)" : "var(--card)"}" stroke="var(--ok)" stroke-width="2"/>
+      <circle data-act="ppt" data-i="${i}" cx="${X(i).toFixed(1)}" cy="${Y(r.strength).toFixed(1)}" r="18" fill="transparent"/>
+      ${i % step === 0 || i === h.length - 1 ? `<text x="${Math.min(W - 30, Math.max(30, X(i))).toFixed(1)}" y="${H - 6}" text-anchor="middle" fill="var(--dim)" font-size="11">${dfmt(r.date)}</text>` : ""}`).join("")}</svg>`;
+}
+
+function pDetail(name) {
+  const h = timeline(name);
+  if (!h.length) { progEx = null; return vProgress(); }
+  const first = h[0], last = h[h.length - 1], peak = Math.max(...h.map(r => r.strength)), gain = h.length > 1 ? +(last.strength - first.strength).toFixed(1) : null;
+  const bestSet = h.flatMap(r => r.sets).reduce((a, x) => e1rm(x) > e1rm(a) ? x : a);
+  const tile = (l, v, u) => `<div class="tile"><small>${l}</small><b>${v}${u ? `<i>${u}</i>` : ""}</b></div>`;
+  const sel = h[progSel != null && progSel < h.length ? progSel : h.length - 1];
+  const best = sel.sets.reduce((a, x) => e1rm(x) > e1rm(a) ? x : a);
+  const chart = h.length > 1
+    ? `<div class="card" style="padding:12px 8px 8px">${pChart(h)}<div class="tip"><b>${dfmt(sel.date)}</b>${sel.day ? " · " + esc(sel.day) : ""}<div>Best set <b>${fmt(best.w)} kg × ${best.reps}</b> · Est. 1RM <b>${sel.strength} kg</b></div><div class="dim small">${esc(runs(sel.sets))} · volume ${sel.volume} kg${place(sel) ? " · done " + place(sel) : ""}${load(sel) ? `<br>${esc(load(sel))}` : ""}</div></div></div>`
+    : `<div class="card dim">Trend appears after your second session of this exercise.</div>`;
+  const rows = h.slice().reverse().map((r, i, a) => { const prev = a[i + 1], d = prev ? +(r.strength - prev.strength).toFixed(1) : null;
+    return `<div class="hrow"><div><b>${dfmt(r.date)}</b><div class="dim small">${esc(r.day)}${r.day ? " · " : ""}${place(r) ? "done " + place(r) + " · " : ""}${r.volume} kg volume${load(r) ? `<br>${esc(load(r))}` : ""}</div></div>
+      <div class="r">${esc(runs(r.sets))}${d ? `<div class="${d > 0 ? "ok" : "bad"} small">${d > 0 ? "▲" : "▼"} ${Math.abs(d)} kg 1RM</div>` : ""}</div></div>`; }).join("");
+  return `<button class="sm ghost" data-act="pback">‹ Progress</button><h1>${esc(name)}</h1><div class="small dim">${h.length} session${h.length === 1 ? "" : "s"}</div>
+    <div class="tiles">${tile("Best set", fmt(bestSet.w) + "×" + bestSet.reps)}${tile("1RM now", last.strength, "kg")}${tile("Peak 1RM", peak, "kg")}${tile("Change", gain == null ? "–" : (gain > 0 ? "+" : "") + gain, gain == null ? "" : "kg")}</div>
+    <h2>Estimated 1-rep max</h2>${chart}<h2>Sessions</h2><div class="card" style="padding:4px 14px">${rows}</div>
+    <div class="small dim" style="margin-top:10px">Estimated 1RM = best set of the session, weight × (1 + reps ÷ 30). Most reliable under about 10 reps; a rough guide for higher-rep cable work.</div>`;
+}
+
+function pWeek(key) {
+  const ss = daySessions().filter(s => isoWeek(s.date) === key);
+  const sets = ss.reduce((n, s) => n + s.ex.reduce((m, e) => m + e.sets.length, 0), 0);
+  const vol = ss.reduce((n, s) => n + s.ex.reduce((m, e) => m + e.sets.reduce((a, x) => a + (x.w || 0) * x.reps, 0), 0), 0);
+  const feelCol = f => f <= 2 ? "var(--warn)" : f >= 4 ? "var(--ok)" : "var(--fg)";
+  const dayRow = s => { const open = progDays.has(s.date), n = s.ex.reduce((m, e) => m + e.sets.length, 0);
+    return `<div class="card dayc"><div class="row between dayh" data-act="pday" data-d="${s.date}"><div><b>${dfull(s.date)}</b><div class="small dim">${s.day ? esc(s.day) + " · " : ""}${s.ex.length} exercises · ${n} sets${s.feel ? ` · feel <span style="color:${feelCol(s.feel)}">${s.feel}/5</span>` : ""}</div></div><span class="chev${open ? " open" : ""}">›</span></div>
+      ${open ? `${s.note ? `<div class="small dim" style="padding:8px 0 0">${esc(s.note)}</div>` : ""}<div style="margin-top:6px">${s.ex.map((e, i) => `<div class="hrow"><div><b>${esc(e.name)}</b>${s.ex.length >= 4 ? `<div class="dim small">#${i + 1}</div>` : ""}</div><div class="r">${esc(runs(e.sets))}</div></div>`).join("")}</div>` : ""}</div>`; };
+  return `<button class="sm ghost" data-act="pback">‹ Progress</button><h1>${esc(key.slice(5))} · ${key.slice(0, 4)}</h1><div class="small dim">${ss.length} session${ss.length === 1 ? "" : "s"}</div>
+    <div class="tiles"><div class="tile"><small>Sessions</small><b>${ss.length}</b></div><div class="tile"><small>Sets</small><b>${sets}</b></div><div class="tile"><small>Volume</small><b>${Math.round(vol).toLocaleString("en-GB")}<i>kg</i></b></div></div>
+    <h2>Days</h2>${ss.map(dayRow).join("") || `<div class="card dim">No sessions this week.</div>`}`;
+}
+
+function vProgress() {
+  if (progWeek) return pWeek(progWeek);
+  if (progEx) return pDetail(progEx);
+  const names = allNames().filter(n => past(n).length);
+  if (!names.length) return `<h1>Progress</h1><div class="card dim">Nothing logged yet.</div>`;
+  const all = daySessions(), weeks = {};
+  all.forEach(s => { const k = isoWeek(s.date); weeks[k] = (weeks[k] || 0) + 1; });
+  // every calendar week from the first session to now (empty ones included), scrollable; opens at the current week
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const mondayOf = ds => { const d = new Date(ds + "T12:00"); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d; };
+  const mon = mondayOf(iso(new Date())), wk = [];
+  for (let d = mondayOf(all[0].date); d <= mon; d.setDate(d.getDate() + 7)) {
+    const prev = wk[wk.length - 1], yr = d.getFullYear();
+    wk.push({ k: isoWeek(iso(d)), n: weeks[isoWeek(iso(d))] || 0, label: d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }), yr: !prev || prev.y !== yr ? yr : "", y: yr, now: +d === +mon });
+  }
+  const wmax = Math.max(3, ...wk.map(w => w.n));
+  const bars = `<div class="weeks">${wk.map(w => `<div class="wbar${w.now ? " now" : ""}" ${w.n ? `data-act="pweek" data-k="${w.k}"` : ""}>
+    <b>${w.n || ""}</b><div class="wb"><i style="height:${w.n ? Math.max(8, Math.round(100 * w.n / wmax)) : 0}%"></i></div><small>${w.label}</small><small class="yr">${w.yr}</small></div>`).join("")}</div>`;
+  const card = n => {
+    const h = timeline(n), last = h[h.length - 1], peak = Math.max(...h.map(r => r.strength));
+    const top = h.flatMap(r => r.sets).reduce((a, x) => e1rm(x) > e1rm(a) ? x : a), pr = h.length > 1 && last.strength >= peak;
+    return `<button class="exc" data-act="pex" data-name="${esc(n)}"><div class="row between"><b>${esc(n)}</b>${pr ? '<span class="prchip">PR</span>' : ""}</div>
+      <div class="exbest">${fmt(top.w)}×${top.reps}<small>best set</small></div>
+      <div class="row between small dim"><span>Last ${dfmt(last.date)}</span>${spark(h.map(r => r.strength).slice(-12))}</div><div class="small dim">${h.length} session${h.length === 1 ? "" : "s"}</div></button>`;
+  };
+  // group by plan day (plan order); anything not in the plan goes under "Not in current plan"
+  const days = S.plan ? Object.keys(S.plan.days) : [], byDay = {};
+  names.forEach(n => { const d = days.find(k => planOrder(k).includes(n)) || "Other"; (byDay[d] = byDay[d] || []).push(n); });
+  const groups = [...days.filter(d => byDay[d]), ...(byDay.Other ? ["Other"] : [])].map(d => {
+    const order = planOrder(d), list = byDay[d].sort((x, y) => (order.indexOf(x) - order.indexOf(y)) || x.localeCompare(y));
+    return `<h2>${d === "Other" ? "Not in current plan" : esc(d) + ": " + esc(S.plan.days[d].title)}</h2><div class="exgrid">${list.map(card).join("")}</div>`;
+  }).join("");
+  return `<h1>Progress</h1><div class="small dim">${all.length} sessions · last ${dfmt(all[all.length - 1].date)}</div>
+    <h2>Sessions per week</h2><div class="card"><div class="wscroll">${bars}</div><div class="small dim" style="margin-top:8px">Swipe sideways for earlier weeks. Tap a bar to open that week.</div></div>${groups}`;
+}
+
+function vExport() {
+  const t = geminiText();
+  return `<h1>Export</h1><div class="row"><button class="pri grow" data-act="copy">Copy for Gemini</button><button class="grow" data-act="csv">CSV</button></div>
+  <div class="small dim" style="margin:8px 0">${esc(msg)}</div><textarea readonly>${esc(t)}</textarea>`;
+}
+
+// ---------- render + events ----------
+function render() {
+  const v = { home: vHome, workout: S.draft ? vWorkout : vHome, finish: S.draft ? vFinish : vHome, add: S.draft ? vAdd : vHome, progress: vProgress, export: vExport }[view]();
+  const scroll = scrollY;
+  $("#app").innerHTML = v;
+  scrollTo(0, scroll);
+  const ws = document.querySelector(".wscroll"); if (ws) ws.scrollLeft = wsLeft == null ? ws.scrollWidth : wsLeft;
+  const tab = view === "finish" || view === "add" ? "workout" : view;
+  $("#tabs").innerHTML = [["home", "Home"], ["workout", "Workout"], ["progress", "Progress"]]
+    .filter(([k]) => k !== "workout" || S.draft)
+    .map(([k, l]) => `<button data-act="tab" data-v="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("");
+  $("#rest").hidden = !(S.draft && S.draft.lastSet && view === "workout");
+  tick();
+}
+function tick() {
+  if (!S.draft || !S.draft.lastSet) return;
+  const s = Math.floor((Date.now() - S.draft.lastSet) / 1000);
+  $("#rt").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  $("#rt").className = s >= 90 ? "ok" : "";
+}
+setInterval(tick, 1000);
+
+document.addEventListener("click", ev => {
+  const t = ev.target.closest("[data-act]"); if (!t) return;
+  const a = t.dataset.act, n = t.dataset.name;
+  if (a === "start") start(t.dataset.day);
+  else if (a === "open") { openEx = openEx === n ? null : n; render(); }
+  else if (a === "mvup") moveEx(n, -1);
+  else if (a === "mvdn") moveEx(n, 1);
+  else if (a === "log") logSet(n, false);
+  else if (a === "same") logSet(n, true);
+  else if (a === "bump") bump(n, t.dataset.f, +t.dataset.d);
+  else if (a === "undo") undo(n);
+  else if (a === "skip") skip(n);
+  else if (a === "finish") { view = "finish"; render(); }
+  else if (a === "feel") { S.draft.feel = +t.dataset.v; save("draft"); render(); }
+  else if (a === "syncnow") { msg = "Loading…"; render(); syncData(); }
+  else if (a === "savekey") {
+    const m = ($("#keyin").value || "").trim().match(/([\w-]{20,})\s*$/);
+    if (m) { ls.set("token", m[1]); msg = "Key saved."; uploadPending().then(syncData); } else { msg = "That does not look like the key."; }
+    render();
+  }
+  else if (a === "addview") { view = "add"; addSel = null; addSets = 3; render(); }
+  else if (a === "addpick") { addSel = n; addSets = templates().get(n).sets || 3; render(); }
+  else if (a === "addsets") { addSets = Math.max(1, addSets + +t.dataset.d); render(); }
+  else if (a === "addgo") addExtra(addSel, addSets);
+  else if (a === "addnew") { const v = ($("#newex").value || "").trim(); if (v) addExtra(v, 3); }
+  else if (a === "back") { view = "workout"; render(); }
+  else if (a === "save") finishAndSend();
+  else if (a === "discard") discard();
+  else if (a === "send") send(S.sessions.find(s => s.id === t.dataset.id));
+  else if (a === "tab") { view = t.dataset.v; msg = ""; progEx = progWeek = progSel = wsLeft = null; render(); }
+  else if (a === "pex") { const w = document.querySelector(".wscroll"); wsLeft = w ? w.scrollLeft : null; progEx = n; progSel = null; render(); scrollTo(0, 0); }
+  else if (a === "pweek") { const w = document.querySelector(".wscroll"); wsLeft = w ? w.scrollLeft : null; progWeek = t.dataset.k; progDays = new Set(); render(); scrollTo(0, 0); }
+  else if (a === "pday") { const d = t.dataset.d; progDays.has(d) ? progDays.delete(d) : progDays.add(d); render(); }
+  else if (a === "pback") { progEx = progWeek = progSel = null; render(); }
+  else if (a === "ppt") { progSel = +t.dataset.i; render(); }
+  else if (a === "copy") copyGemini();
+  else if (a === "csv") download("gym-log.csv", "text/csv", csv());
+});
+document.addEventListener("input", ev => {   // typed values count at once, even if "Log set" is tapped without leaving the field
+  const t = ev.target;
+  if (t.dataset.act === "setv") setVal(t.dataset.name, t.dataset.f, t.value);
+  else if (t.dataset.act === "feelnote") { S.draft.note = t.value; save("draft"); }
+  else if (t.dataset.act === "addsetsv") addSets = Math.max(1, parseInt(t.value) || 1);
+});
+document.addEventListener("change", ev => {
+  const t = ev.target;
+  if (t.dataset.act === "useshortcut") ls.set("useShortcut", t.checked);
+  else if (t.dataset.act === "import") importFiles([...t.files]);
+  else if (t.dataset.act === "setv") setVal(t.dataset.name, t.dataset.f, t.value);
+});
+
+{   // return from the Shortcut
+  const q = new URLSearchParams(location.search), id = q.get("sent"), bad = q.get("failed");
+  const sess = S.sessions.find(x => x.id === (id || bad));
+  if (sess && id) { sess.sent = true; save("sessions"); msg = "Saved to iCloud."; }
+  if (bad) msg = "Shortcut failed: workout is kept, tap Send on Home.";
+  if (id || bad) history.replaceState(null, "", location.pathname);
+}
+{   // one-time setup link: https://YOUR-SITE.netlify.app/#token=...  (the token is kept on this phone only)
+  const m = location.hash.match(/token=([\w-]+)/);
+  if (m) { ls.set("token", m[1]); history.replaceState(null, "", location.pathname); msg = "Auto-upload is on."; }
+}
+async function syncData() {   // plan + history published by the Mac; never swapped mid-workout
+  if (S.draft) return;
+  const token = ls.get("token", null);
+  try {
+    const r = await fetch("/api/plan", { cache: "no-store", headers: token ? { Authorization: "Bearer " + token } : {} });
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    if (d.plan && d.plan.days && !S.draft) {
+      S.plan = d.plan; save("plan");
+      if (d.history) { S.hist = d.history; save("hist"); }
+      if (view === "home") render();
+    }
+  } catch { if (!S.plan) { msg = "Could not load the plan. Check your connection and tap Load plan."; if (view === "home") render(); } }
+}
+(ls.get("token", null) ? uploadPending() : Promise.resolve()).then(syncData);   // upload first so "last time" includes it
+addEventListener("online", () => (ls.get("token", null) ? uploadPending() : Promise.resolve()).then(syncData));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) syncData(); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+data/
+*.log
+.DS_Store
+__pycache__/
+inbox
+/gym
+.netlify/
+node_modules/
+/state.md
+/items.json
+/registry/
+/cv/
+config.env
+.venv/
+/CLAUDE.md

@@ -1,0 +1,16 @@
+{
+  "_doc": "Tasks, routines and details behind calendar events. Events live in Apple Calendar.",
+  "items": [
+    {
+      "id": "task-example",
+      "type": "task",
+      "title": "Example task",
+      "who": "me",
+      "due": "2026-01-01",
+      "status": "open",
+      "confidence": "confirmed",
+      "source": "me",
+      "notes": ""
+    }
+  ]
+}
