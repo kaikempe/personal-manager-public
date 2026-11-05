@@ -58,9 +58,9 @@ Two more scripts follow the author's routine and need editing before they fit yo
 
 ## Privacy
 
-Scripts read your calendar, reminders and mail on your Mac. Nothing is sent anywhere until you use a
-feature that calls the `claude` CLI; those send their input to Anthropic under your own Claude account and
-its data settings:
+Scripts read your calendar, reminders and mail on your Mac. Apart from the optional gym sync to your own
+Netlify site, nothing leaves it until you use a feature that calls the `claude` CLI; those send their input to
+Anthropic under your own Claude account and its data settings:
 
 | feature | what the model receives |
 |---|---|
