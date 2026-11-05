@@ -762,12 +762,20 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         return json.loads(self.rfile.read(n) or b"{}")
 
+    def host_ok(self):
+        # DNS rebinding: a site can point its own domain at 127.0.0.1, and the browser then treats this server as
+        # that site and lets its page read the answers. The Host header still names the attacker's domain, so only
+        # the dashboard's own addresses are served. Answered 403 before any data is read.
+        return self.headers.get("Host") in (f"127.0.0.1:{PORT}", f"localhost:{PORT}")
+
     def local_only(self):
         # Writes must come from the dashboard page itself, not another site in the browser.
         origin = self.headers.get("Origin")
         return origin in (None, f"http://127.0.0.1:{PORT}", f"http://localhost:{PORT}")
 
     def do_GET(self):
+        if not self.host_ok():
+            return self.send(403, {"error": "forbidden host"})
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             self.send(200, (ROOT / "dashboard/index.html").read_bytes(), "text/html; charset=utf-8")
@@ -822,7 +830,7 @@ class Handler(BaseHTTPRequestHandler):
                             "reply": "".join(reply), "error": error})
 
     def do_POST(self):
-        if not self.local_only():
+        if not self.host_ok() or not self.local_only():
             return self.send(403, {"error": "forbidden origin"})
         path = self.path.split("?")[0]
         try:
