@@ -42,6 +42,7 @@ dashboard/   local web dashboard (server.py + index.html)
 scripts/     calendar export, inbox and mail intake, gym ingest/review, vault sync
 app/         gym PWA (app/gym) and its Netlify functions (app/gym-functions)
 examples/    starter state.md, items.json and a registry entry
+tests/       standard-library tests: python3 -m unittest discover -s tests
 ```
 
 Your own `state.md`, `items.json`, `registry/`, `cv/` and `data/` are gitignored so personal data
