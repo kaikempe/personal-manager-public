@@ -216,7 +216,7 @@ def plain(r):
 def reword(r, text, use_llm):
     if not use_llm:
         return text
-    prompt = ("You are the user's training log reviewer. Rewrite the facts below as at most 6 short plain lines: what he did, what he left out, "
+    prompt = ("You are the user's training log reviewer. Rewrite the facts below as at most 6 short plain lines: what they did, what they left out, "
               "what to change next time. Use only numbers and exercises that appear in the facts, invent nothing, no greeting, no emoji. "
               "Say it directly.\n\nFACTS (JSON):\n" + json.dumps(r, ensure_ascii=False) + "\n\nDETERMINISTIC SUMMARY:\n" + text)
     try:

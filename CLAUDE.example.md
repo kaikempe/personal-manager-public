@@ -15,5 +15,8 @@ Set your own order, e.g. graded work > paid work > own projects.
 ## Status model (registry frontmatter)
 active, on-hold (needs `revisit`), idea, completed (needs `outcome`), archived, unknown.
 
+## Getting around
+I travel by public transport (the chat uses this for travel times; change it to how you travel).
+
 ## Style
 Direct, concise, answer first.
