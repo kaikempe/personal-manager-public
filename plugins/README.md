@@ -12,8 +12,8 @@ you confirm, extra **chat rules**, and **phone routes**. `_example.py` is a work
 | `BROWSER_WORDS` | `str` | Regex fragment. Questions that match it start Chrome first, for the browser tools |
 | `ROUTES` | `dict` | `"/path" -> fn(cmd, phone)` for the phone endpoint (`scripts/phone_server.py`). The request needs the phone token |
 | `CHECKS` | `fn() -> [(level, name, detail)]` | Rows for `scripts/health.py` and the System page. `level` is `ok`, `warn` or `error` |
-| `HOURLY` | `fn()` | Called once an hour by `scripts/state_refresh.py`. For reminders: use `notify.send(text, phone=True, key=...)`, the key keeps it to one alert |
-| `INBOX_LINE`, `INBOX` | regex, `fn(text, created) -> str` | A line in the inbox list that matches `INBOX_LINE` is your command (e.g. filed by a phone shortcut while the Mac was unreachable). It is run in code, before any model, and its reminder is ticked first. Return what happened; start with "Not " when it was refused |
+| `HOURLY` | `fn()` | Called once an hour by `scripts/state_refresh.py`, with no arguments. For reminders: use `notify.send(text, phone=True, key=...)`, the key keeps it to one alert |
+| `INBOX_LINE`, `INBOX` | regex (compiled, or a string matched case-insensitively), `fn(text, created) -> str` | A Reminders inbox line that matches `INBOX_LINE` from its start is your command (e.g. filed by a phone shortcut while the Mac was unreachable). It is run in code, before any model, and its reminder is ticked first. `created` is a naive `datetime` or `None`. Return what happened; start with "Not ", "Could not" or "No " when it was refused, so it shows on the Inbox page as needing you |
 
 An action spec has these keys:
 

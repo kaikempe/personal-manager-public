@@ -136,3 +136,45 @@ class StartAfterTasks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExamInClass(unittest.TestCase):
+    """The overlap rule lives in dashboard/index.html (`examInClass`); it is run here in node, with the real function text."""
+
+    def run_rule(self, ev, cls):
+        import json
+        import re
+        import shutil
+        import subprocess
+        if not shutil.which("node"):
+            self.skipTest("node not installed")
+        html = (ROOT / "dashboard/index.html").read_text()
+        fn = re.search(r"function examInClass\(ev, cls\) \{.*?\n\}\n", html, re.S).group(0)
+        js = ("const D = {write_calendar: 'Private', course_filler: %s};\nconst hm = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);\n%s"
+              "console.log(JSON.stringify(examInClass(%s, %s)));") % (json.dumps(sorted(server.COURSE_FILLER)), fn, json.dumps(ev), json.dumps(cls))
+        return json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
+
+    CLASS = {"cat": "class", "kind": "calendar", "cal": "School", "t": "12:00", "te": "13:20", "base": "CALCULUS FOR COMPUTER SCIENCE", "title": "x"}
+    QUIZ = {"cat": "meeting", "kind": "calendar", "cal": "Private", "t": "12:00", "te": "13:20", "full": "Calculus quiz", "title": "Calculus quiz"}
+
+    def test_an_exam_in_its_own_class_is_no_overlap(self):
+        self.assertTrue(self.run_rule(self.QUIZ, self.CLASS))
+        self.assertTrue(self.run_rule({**self.QUIZ, "t": "12:10", "te": "13:00"}, self.CLASS))
+
+    def test_everything_else_still_clashes(self):
+        for ev, cls in ((self.QUIZ, {**self.CLASS, "base": "ALGEBRA I"}),                    # another course's class
+                        ({**self.QUIZ, "full": "Flight LH1804"}, self.CLASS),                  # a flight
+                        ({**self.QUIZ, "full": "Gym - Day 2"}, self.CLASS),                    # a gym session
+                        ({**self.QUIZ, "cal": "School"}, self.CLASS),                          # not the writable calendar
+                        ({**self.QUIZ, "t": "13:00", "te": "14:00"}, self.CLASS),              # sticks out of the slot
+                        ({**self.QUIZ, "full": "Computer meetup"}, self.CLASS)):               # only a filler word
+            with self.subTest(ev=ev["full"], cls=cls["base"]):
+                self.assertFalse(self.run_rule(ev, cls))
+
+
+class DuplicateRows(unittest.TestCase):
+    def test_the_same_tracker_row_twice_is_one_row(self):
+        row = {"course": "C", "source": "exam", "kind": "assessment", "title": "Presentations", "done": False, "status": "open",
+               "due": "2026-11-30T10:30+01:00", "ends": "2026-11-30T13:20+01:00"}
+        self.assertEqual(len(server.open_deadlines([row, dict(row)], NOW, (), "Private")), 1)
+        self.assertEqual(len(server.open_deadlines([row, {**row, "due": "2026-11-30T14:00+01:00"}], NOW, (), "Private")), 2)

@@ -148,7 +148,7 @@ def alerts(o, now, prev_errors=(), send=None):
 
 
 def plugin_hourly():
-    """Plugins with HOURLY(now) get one call per run (plugins/README.md). A failure is printed, never raised."""
+    """Plugins with HOURLY() get one call per run (plugins/README.md). A failure is printed, never raised."""
     import plugins_load
     for mod, fn in plugins_load.each("HOURLY"):
         try:
