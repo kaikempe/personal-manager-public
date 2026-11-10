@@ -81,7 +81,27 @@ h1{font-size:34px;line-height:1.1;font-weight:700;letter-spacing:-.022em;margin:
 .chip{font-size:11px;font-weight:600;border-radius:5px;padding:1px 6px;background:var(--fill);color:var(--label2)}
 .chip.graded{color:var(--red)}.chip.paid{color:var(--green)}.chip.focus{background:var(--tint);color:#fff}.chip.pause{color:var(--orange)}
 .chip.risk{color:var(--orange);background:color-mix(in srgb,var(--orange) 14%,transparent)}
-.pr.paused .pr-name,.pr.paused .pr-sub,.pr.paused .pr-next{opacity:.6}
+.pr.wk-pause .pr-name,.pr.wk-pause .pr-sub,.pr.wk-pause .pr-next{opacity:.6}
+.pr.pc{padding:12px 16px}.pr.wk-focus{box-shadow:inset 3px 0 0 var(--tint)}
+.pr-name{font-size:16px}.pr.done .pr-name{font-size:15px;font-weight:500}
+.pr-meta{font-size:12px;color:var(--label2);margin:1px 0 0 17px}
+.pr-hint{font-size:12px;color:var(--label3);margin:5px 0 0 17px}
+.pr-when.old{color:var(--orange)}.chip.wait{color:var(--purple)}
+.pr-next.ph{color:var(--label3)}.pr-next.ph b{color:var(--label3)}
+.dq{display:flex;gap:12px;padding:10px 16px;align-items:center;flex-wrap:wrap}.dq .txt{flex:1 1 260px;min-width:0}
+.dq small{display:block;color:var(--label2);font-size:13px}.dq-t{font-weight:600;color:var(--label);text-align:left}.dq-t:hover{color:var(--tint)}
+.dq-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dq-act .field[hidden]{display:none}
+.ghl{display:flex;justify-content:space-between;align-items:baseline}.ghl a{color:var(--tint);text-transform:none;letter-spacing:0;font-weight:500;text-decoration:none;font-size:13px}
+.stiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.stile{background:var(--card);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.stile.focus{box-shadow:inset 3px 0 0 var(--tint)}
+.stile-c{font-size:12px;color:var(--label2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stile-t{font-weight:600;font-size:14px;line-height:1.3}.stile-t>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.stile-t small{display:block;font-weight:400;font-size:12px;color:var(--label2);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.stile-d{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--label2);margin-top:auto;padding-top:2px;font-variant-numeric:tabular-nums}
+.stile-d>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stile-d .cd{font-weight:600;white-space:nowrap;flex:none}.stile-d .cd.soon{color:var(--red)}
+.stile-m{font-size:11px;color:var(--label3)}.stile-f{font-size:11px;color:var(--label2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pgrp+.pgrp>summary{margin-top:14px}
 .pr-edit{display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px 10px;align-items:center;margin:10px 0 2px 17px}
 .pr-edit .l{color:var(--label2);font-size:13px}.pr-edit .field{width:100%}.pr-edit select{justify-self:start}
 .pr-facts{color:var(--label2);font-size:12px;margin:12px 0 2px 17px;line-height:1.5}
@@ -501,7 +521,9 @@ const dowOf = d => new Date(d + 'T12:00').getDay();
 const longDay = d => `${FULL[dowOf(d)]} ${+d.slice(8)} ${MONTHS[+d.slice(5,7) - 1]}`;
 // Display-only tidy-up of Blackboard deadline titles: one name per kind of assessment, the
 // detail moved to a note, a cut-off description trimmed at a whole word.
-const KINDS = [[/mid-?term/i, 'Midterm'], [/final/i, 'Final exam'], [/quiz/i, 'Quiz'], [/in-?class/i, 'In-class assessment'], [/problem set/i, 'Problem set']];
+// "Final project presentation" or "files for the final empirical project" are not an exam: keep their own words.
+const NOT_EXAM = /\b(project|presentation|report|paper|essay|files?)\b/i;
+const KINDS = [[/mid-?term/i, 'Midterm', NOT_EXAM], [/final/i, 'Final exam', NOT_EXAM], [/quiz/i, 'Quiz'], [/in-?class/i, 'In-class assessment'], [/problem set/i, 'Problem set']];
 // Lower-case the words, but keep the acronyms from PM_ACRONYMS (config.env) in capitals.
 const sentence = s => { s = nice(s); const ac = new Set(((D && D.acronyms) || []).map(a => a.toUpperCase()));
   return s.charAt(0) + s.slice(1).replace(/[\p{L}\p{N}]+/gu, w => ac.has(w.toUpperCase()) ? w.toUpperCase() : w.toLowerCase()); };
@@ -513,7 +535,7 @@ function cleanDeadline(d) {
   if (m) { head = m[1]; desc = m[2]; }
   const pm = head.match(/^(.*?)\s*\((.+)\)$/);
   if (pm) { head = pm[1]; notes.push(pm[2].replace(/graded/i, '').replace(/^[,\s]+|[,\s]+$/g, '')); }
-  head = (KINDS.find(([re]) => re.test(head)) || [0, sentence(head)])[1];
+  head = (KINDS.find(([re, , not]) => re.test(head) && !(not && not.test(head))) || [0, sentence(head)])[1];
   if (desc) {
     // Blackboard cuts long titles at ~60 characters, mid-word: drop the broken word.
     const cut = desc.length >= 55 && !/[.!?)]$/.test(desc);
@@ -538,6 +560,17 @@ const fmtIn = ms => { const m = Math.round(ms / 60000); return m < 1 ? 'now' : m
 
 /* ---------- data ---------- */
 const baseTitle = t => t.replace(/\s+/g, ' ').trim().toUpperCase().split(/\s*\(SES|\s+-\s+\d+-\d+/)[0].trim();
+// The one rule for "an event of the user's own sitting in a class of that course is not an overlap" (tests/test_upcoming.py
+// runs this function in node): `ev` is in the writable calendar, is not itself a class, lies inside or equal to the class
+// slot, and names a distinctive word of the class's course (words of 4+ letters, minus D.course_filler).
+function examInClass(ev, cls) {
+  if (cls.cat !== 'class' || ev.cat === 'class' || ev.kind !== 'calendar' || ev.cal !== D.write_calendar || !ev.t || !cls.t) return false;
+  const words = s => (String(s).toLowerCase().match(/[a-zà-ÿ0-9]+/g) || []).filter(w => w.length >= 4);
+  const all = words(cls.base), filler = new Set(D.course_filler || []), course = all.filter(w => !filler.has(w));
+  const title = new Set(words(ev.full || ev.title));
+  const e0 = hm(ev.t), e1 = ev.te ? hm(ev.te) : e0 + 60, c0 = hm(cls.t), c1 = cls.te ? hm(cls.te) : c0 + 60;
+  return (course.length ? course : all).some(w => title.has(w)) && e0 >= c0 && e1 <= c1;
+}
 function collect(from, to) {
   const rows = [], inRange = d => d >= from && d < to;
   const mine = new RegExp(`^(${D.owner ? D.owner.replace(/[^\p{L}\p{N} -]/gu, '') + '|' : ''}my|flight|fly|flug)\\b`, 'iu');
@@ -585,6 +618,7 @@ function collect(from, to) {
     const pt = r => r.kind === 'deadline' || (r.te && hm(r.te) <= hm(r.t));
     if (pt(a) !== pt(b) && a.base && b.base && (a.base.startsWith(b.base) || b.base.startsWith(a.base))) continue;
     const a0 = hm(a.t), a1 = a.te ? hm(a.te) : a0 + 60, b0 = hm(b.t), b1 = b.te ? hm(b.te) : b0 + 60;
+    if (examInClass(a, b) || examInClass(b, a)) continue;
     if (a0 < b1 && b0 < a1) { a.clash = true; b.clash = true; }
   }
   return out;
@@ -703,7 +737,7 @@ function briefing() {
   const clash = cl.length ? `${DAYS[dowOf(cl[0].day)]}: ${cl.filter(r => r.day === cl[0].day).map(r => r.title.split(':')[0]).slice(0, 2).join(' vs ')}` : 'None this week';
   const paused = D.registry.filter(r => r.this_week === 'pause').map(r => r.name);
   const line = (k, v) => `<div class="bl"><b>${k}</b><span>${esc(v)}</span></div>`;
-  return `<div class="brief"><span class="eyebrow">Today’s briefing</span>${dl ? line('Next graded', `${nice(dl.course)} ${fmtIn(new Date(dl.due) - now)}`) : ''}${line('Overlaps', clash)}${line('Paused this week', paused.join(', ') || 'Nothing')}</div>`;
+  return `<div class="brief"><span class="eyebrow">Today’s briefing</span>${dl ? line('Next graded', `${nice(dl.course)} ${fmtIn(new Date(dl.due) - now)}`) : ''}${line('Overlaps', clash)}${line('Not this week', paused.join(', ') || 'Nothing')}</div>`;
 }
 function dayGroup(rows, d, today) {
   return `<div class="gh">${heading(d, today)}</div><div class="group">${rows.length ? rows.map(evRow).join('') : '<div class="empty">Nothing scheduled.</div>'}</div>`;
@@ -714,6 +748,7 @@ function cdOf(when) {
 }
 
 /* ---------- views ---------- */
+const openGroups = new Set();   // Projects page: folded groups the user opened stay open across reloads
 const V = {
   today() {
     const today = D.now.slice(0,10), tm = addDays(today, 1), rows = collect(today, addDays(today, 2));
@@ -829,72 +864,83 @@ const V = {
         <button class="pill press" data-okb="${esc(r.file)}">Confirm</button></div>`).join('') || '<div class="empty">Nothing waiting on you.</div>'}</div>
       <p class="foot">Status is a claim until you confirm it. On hold needs a revisit date or trigger, in words.</p>`;
   },
+  // Grouping, order, titles, relative activity and the questions all come from the server (projects_page); this only draws.
   projects() {
-    const today = D.now.slice(0,10), dayN = d => Math.round((new Date(today + 'T12:00') - new Date(d + 'T12:00')) / 864e5);
-    const ago = d => { if (!d) return ''; const n = dayN(d); return n <= 0 ? 'today' : n === 1 ? 'yesterday' : n < 14 ? n + ' d ago' : n < 60 ? Math.round(n / 7) + ' wk ago' : Math.round(n / 30) + ' mo ago'; };
-    const live = r => !['archived', 'completed'].includes(r.status);
-    const drafts = r => (r.drafted || '').split(',').filter(Boolean);
-    const risks = r => {
-      const x = [];
-      if (r.uncommitted) x.push(`${r.uncommitted} uncommitted`);
-      if (r.unpushed) x.push(`${r.unpushed} unpushed`);
-      if (r.unmerged_branch && r.status === 'active') x.push(`on branch ${r.unmerged_branch}`);
-      if (live(r) && r.path && !r.has_git) x.push('not in git');
-      else if (live(r) && r.has_git && !r.repo) x.push('no remote');
-      if (r.backup_only) x.push('backup commits only');
-      return x;
-    };
-    // What needs a decision or a look, before the full list.
-    const flags = [];
-    for (const r of D.registry.filter(live)) {
-      if (r.confirmed !== 'true') flags.push([r, 'Status not confirmed by you']);
-      if (r.status === 'on-hold' && !r.revisit) flags.push([r, 'On hold with no revisit date']);
-      if (r.status === 'active' && r.last_active && dayN(r.last_active) > 30) flags.push([r, `Marked active, but no work for ${dayN(r.last_active)} days`]);
-      if (r.status === 'active' && r.path && !r.repo) flags.push([r, 'Not backed up: no remote repository']);
-      if (r.unpushed) flags.push([r, `${r.unpushed} commit(s) not pushed`]);
-      if (r.unmerged_branch && r.status === 'active') flags.push([r, `Latest work is on unmerged branch ${r.unmerged_branch}`]);
-      if (r.backup_only) flags.push([r, 'Only automatic backup commits, no real work recorded']);
-    }
+    const P = D.projects, n = P.counts;
     const dot = st => `<span class="dot st-${esc(st)}" title="${esc(st)}"></span>`;
     const opts = (list, cur) => list.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
-    const field = (r, k, label, ph) => `<span class="l">${label}</span><input class="field" data-p="${esc(r.file)}" data-f="${k}" value="${esc(r[k])}" placeholder="${ph}" aria-label="${label}">`;
-    const row = r => {
-      const dr = drafts(r), rk = risks(r), isOpen = openRows.has(r.file);
-      return `<div class="pr ${isOpen ? 'open' : ''} ${r.this_week === 'pause' ? 'paused' : ''}" data-exp data-name="${esc(r.file)}">
-      <div class="pr-main">${dot(r.status)}<span class="pr-name">${esc(r.name)}</span>
-        ${r.purpose ? `<span class="chip ${esc(r.purpose)}">${esc(r.purpose)}</span>` : ''}${r.this_week ? `<span class="chip ${esc(r.this_week)}">${r.this_week === 'pause' ? 'paused this week' : 'focus this week'}</span>` : ''}
-        ${r.confirmed === 'true' ? '' : '<span class="tag">Unconfirmed</span>'}${dr.length ? '<span class="tag kind">Draft</span>' : ''}
-        ${r.status === 'on-hold' ? `<input class="field" data-p="${esc(r.file)}" data-f="revisit" value="${esc(r.revisit)}" placeholder="Revisit (required)" aria-label="Revisit">` : ''}
-        <span class="pr-spacer"></span><span class="pr-when" title="${esc(r.last_msg)}">${r.last_active ? ago(r.last_active) : ''}</span>
-        <select data-n="${esc(r.file)}" aria-label="Status">${D.statuses.map(x => `<option ${x === r.status ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-      ${r.summary ? `<div class="pr-sub">${esc(r.summary)}</div>` : live(r) ? '<div class="pr-sub ph">No description yet</div>' : ''}
-      ${r.next ? `<div class="pr-next"><b>Next</b>${esc(r.next)}</div>` : ''}
-      ${rk.length || r.waiting ? `<div class="pr-chips">${r.waiting ? `<span class="chip">Waiting: ${esc(r.waiting)}</span>` : ''}${rk.map(x => `<span class="chip risk">${esc(x)}</span>`).join('')}</div>` : ''}
+    const field = (c, k, label, ph) => `<span class="l">${label}</span><input class="field" data-p="${esc(c.file)}" data-f="${k}" value="${esc(c[k])}" placeholder="${ph}" aria-label="${label}">`;
+    const statusSel = c => `<select data-n="${esc(c.file)}" aria-label="Status">${D.statuses.map(x => `<option ${x === c.status ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
+    const PURPOSE = {graded: 'Graded', paid: 'Paid', own: 'Own'};
+    const shortDay = d => `${DAYS[dowOf(d)]} ${+d.slice(8)} ${MONTHS[+d.slice(5, 7) - 1].slice(0, 3)}`;
+    const dueText = s => `${shortDay(s.due.slice(0, 10))}${timeOf(s.due) && timeOf(s.due) !== '23:59' ? ' · ' + timeOf(s.due) : ''}`;
+    const card = c => {
+      const isOpen = openRows.has(c.file), done = ['completed', 'archived'].includes(c.status), course = c.kind === 'course';
+      const meta = [c.kind_label, PURPOSE[c.purpose] || '', c.status === 'on-hold' ? 'On hold' : c.status === 'idea' ? 'Idea' : ''].filter(Boolean).join(' · ');
+      let body = '';
+      if (course) {
+        const s = c.live_next, cl = s && cleanDeadline(s);
+        body = s ? `<div class="pr-next"><b>Next graded</b>${esc(cl.title)}${cl.note ? ' · ' + esc(cl.note) : ''} · ${esc(dueText(s))}</div>` : '<div class="pr-sub ph">No open graded work in BB Tracker</div>';
+      } else if (c.status === 'completed') {
+        body = c.outcome ? `<div class="pr-next"><b>Outcome</b>${esc(c.outcome)}</div>` : '<div class="pr-sub ph">No outcome written yet</div>';
+      } else {
+        body = (c.summary ? `<div class="pr-sub">${esc(c.summary)}</div>` : done ? '' : '<div class="pr-sub ph">No description yet</div>')
+          + (c.next_step ? `<div class="pr-next"><b>Next</b>${esc(c.next_step)}</div>` : done ? '' : '<div class="pr-next ph"><b>Next</b>No next step written</div>');
+      }
+      // Secondary: git housekeeping, and which text was drafted for the user and not yet checked (open the card to confirm).
+      const DRAFT = {summary: 'description', next: 'next step', this_week: 'this week', purpose: 'purpose'};
+      const dr = c.status === 'archived' ? [] : c.drafted_fields.filter(f => f !== 'evidence' && (c[f] || '').trim()).map(f => DRAFT[f] || f);
+      const hl = [...c.hints, dr.length ? `${dr.join(', ')} drafted, not checked` : ''].filter(Boolean);
+      const hints = hl.length ? `<div class="pr-hint">${esc(hl.join(' · '))}</div>` : '';
+      return `<div class="pr pc ${isOpen ? 'open' : ''} ${c.week ? 'wk-' + c.week : ''} ${done ? 'done' : ''}" data-exp data-name="${esc(c.file)}">
+      <div class="pr-main">${dot(c.status)}<span class="pr-name">${esc(c.title)}</span>
+        ${c.week === 'focus' ? '<span class="chip focus">Focus this week</span>' : c.week === 'pause' ? '<span class="chip pause">Not this week</span>' : ''}
+        ${c.waiting ? `<span class="chip wait">Waiting on ${esc(c.waiting)}</span>` : ''}
+        ${c.confirmed === 'true' ? '' : '<span class="tag">Unconfirmed</span>'}
+        ${c.status === 'on-hold' ? `<input class="field" data-p="${esc(c.file)}" data-f="revisit" value="${esc(c.revisit)}" placeholder="Revisit (required)" aria-label="Revisit">` : ''}
+        <span class="pr-spacer"></span><span class="pr-when ${c.stale ? 'old' : ''}" title="${c.last_msg ? esc('Last real commit: ' + c.last_msg + ' (' + c.last_active + ')') : ''}">${esc(c.ago)}</span>
+        ${statusSel(c)}</div>
+      <div class="pr-meta">${esc(meta)}</div>${body}${hints}
       <div class="pr-ev">
-        ${dr.length ? `<div class="pr-draft">Drafted from your notes, not yet confirmed: ${esc(dr.join(', '))}. Edit what's wrong. <button class="pill ghost press" data-draft="${esc(r.file)}">Looks right</button></div>` : ''}
-        <div class="pr-edit">${field(r, 'summary', 'Description', 'What is it?')}${field(r, 'next', 'Next step', 'The one next action')}
-          <span class="l">Purpose</span><select data-p="${esc(r.file)}" data-f="purpose" aria-label="Purpose">${opts([['', 'Not set'], ['graded', 'Graded'], ['paid', 'Paid'], ['own', 'Own project']], r.purpose || '')}</select>
-          <span class="l">This week</span><select data-p="${esc(r.file)}" data-f="this_week" aria-label="This week">${opts([['', 'Normal'], ['focus', 'Focus'], ['pause', 'Pause']], r.this_week || '')}</select>
-          ${field(r, 'waiting', 'Waiting on', 'Person or thing, optional')}
-          ${r.status === 'on-hold' ? '' : field(r, 'revisit', 'Revisit', 'Date or trigger')}</div>
-        ${r.body ? `<div class="pr-notes">${md(r.body)}</div>` : ''}
-        <div class="pr-facts">${r.last_msg ? `Last real commit: “${esc(r.last_msg)}” (${esc(r.last_active)})<br>` : ''}${r.path ? `Folder: ~/Developer/${esc(r.path)}<br>` : ''}${r.repo ? `Repo: ${esc(r.repo)}<br>` : ''}${esc(r.evidence)}</div>
+        ${c.drafted_fields.length ? `<div class="pr-draft">Drafted from your notes, not yet confirmed: ${esc(c.drafted_fields.join(', '))}. Edit what's wrong. <button class="pill ghost press" data-draft="${esc(c.file)}">Looks right</button></div>` : ''}
+        ${course ? '<div class="pr-draft">Dates and graded work for a course come from BB Tracker; the description below is not shown on the card.</div>' : ''}
+        <div class="pr-edit">${field(c, 'summary', 'Description', 'What is it?')}${field(c, 'next', 'Next step', 'The one next action')}
+          ${c.status === 'completed' ? field(c, 'outcome', 'Outcome', 'What shipped, with dates') : ''}
+          <span class="l">Purpose</span><select data-p="${esc(c.file)}" data-f="purpose" aria-label="Purpose">${opts([['', 'Not set'], ['graded', 'Graded'], ['paid', 'Paid'], ['own', 'Own project']], c.purpose || '')}</select>
+          <span class="l">This week</span><select data-p="${esc(c.file)}" data-f="this_week" aria-label="This week">${opts([['', 'Normal'], ['focus', 'Focus'], ['pause', 'Not this week']], c.week)}</select>
+          ${field(c, 'waiting', 'Waiting on', 'Person or thing, optional')}
+          ${c.status === 'on-hold' ? '' : field(c, 'revisit', 'Revisit', 'Date or trigger')}</div>
+        ${c.body ? `<div class="pr-notes">${md(c.body)}</div>` : ''}
+        <div class="pr-facts">${c.last_msg ? `Last real commit: “${esc(c.last_msg)}” (${esc(c.last_active)})<br>` : ''}${c.path ? `Folder: ~/Developer/${esc(c.path)}<br>` : ''}${c.repo ? `Repo: ${esc(c.repo)}<br>` : ''}${esc(c.evidence)}</div>
       </div></div>`;
     };
-    const sections = [['Studies and work', ['course', 'internship', 'programme']], ['Ventures', ['venture']], ['Software projects', ['project']], ['Tools', ['tool']]];
-    const rank = r => ({active: 0, 'on-hold': 1, idea: 2, unknown: 3})[r.status] ?? 4;
-    const wk = r => ({focus: 0, '': 1, pause: 2})[r.this_week || ''];
-    const lv = D.registry.filter(live), names = l => l.map(r => r.name).join(', ');
-    const focus = lv.filter(r => r.this_week === 'focus'), paused = lv.filter(r => r.this_week === 'pause');
-    let html = `<h1>Projects</h1><p class="subtitle">${lv.length} live · ${D.registry.length - lv.length} archived or completed${focus.length ? ' · Focus: ' + esc(names(focus)) : ''}${paused.length ? ' · Paused: ' + esc(names(paused)) : ''}</p>${banner()}`;
-    if (flags.length) html += `<div class="gh">Needs a look · ${new Set(flags.map(f => f[0])).size}</div><div class="group">${[...new Set(flags.map(f => f[0]))].map(r => `<div class="rem"><span class="dot st-${esc(r.status)}" style="margin-top:7px"></span><div class="txt"><b>${esc(r.name)}</b><small>${flags.filter(f => f[0] === r).map(f => esc(f[1])).join(' · ')}</small></div></div>`).join('')}</div>`;
-    for (const [title, kinds] of sections) {
-      const rs = D.registry.filter(r => kinds.includes(r.kind) && live(r)).sort((a, b) => rank(a) - rank(b) || wk(a) - wk(b) || (b.last_active || '').localeCompare(a.last_active || '') || a.name.localeCompare(b.name));
-      if (rs.length) html += `<div class="gh">${title} · ${rs.length}</div><div class="group">${rs.map(row).join('')}</div>`;
-    }
-    const done = D.registry.filter(r => !live(r)).sort((a, b) => a.name.localeCompare(b.name));
-    if (done.length) html += `<details class="later"><summary class="gh">Archived and completed · ${done.length}</summary><div class="group">${done.map(row).join('')}</div></details>`;
-    return html + '<p class="foot">Last activity is the newest real commit (hover for its message); automatic backup commits are ignored. Changing a status marks it confirmed. Fields save when you leave them.</p>';
+    // Questions only the user can answer. The status select + Save is the Review page's control; "Not this week"
+    // answers "still active?" with "yes, just not now".
+    const ask = d => {
+      const hold = d.reasons.some(r => r === 'revisit_due' || r === 'no_revisit');
+      const act = d.reasons.includes('no_outcome') && d.reasons.length === 1
+        ? `<input class="field" data-p="${esc(d.file)}" data-f="outcome" placeholder="What shipped, with dates" aria-label="Outcome">`
+        : `<input class="field" data-rv="${esc(d.file)}" value="${esc(d.revisit)}" placeholder="Revisit date or trigger" aria-label="Revisit" ${d.status === 'on-hold' || hold ? '' : 'hidden'}>
+           <select data-ok="${esc(d.file)}" aria-label="Status">${D.statuses.map(s => `<option ${s === d.status ? 'selected' : ''}>${s}</option>`).join('')}</select>
+           <button class="pill press" data-okb="${esc(d.file)}">Save</button>${d.reasons.includes('stale') ? `<button class="pill ghost press" data-p="${esc(d.file)}" data-pset='{"this_week":"pause"}' title="Keep it active, set to not this week">Not this week</button>` : ''}`;
+      return `<div class="dq"><div class="txt"><button class="dq-t" data-goto="${esc(d.file)}">${esc(d.title)}</button><small>${d.questions.map(esc).join(' ')}</small></div><div class="dq-act">${act}</div></div>`;
+    };
+    const tile = s => {
+      const cl = cleanDeadline(s), c = cdOf(s.due);
+      return `<div class="stile ${s.focus ? 'focus' : ''}"><div class="stile-c">${esc(nice(s.course))}${s.focus ? ' <span class="chip focus">Focus</span>' : ''}</div>
+        <div class="stile-t" title="${esc(cl.title)}"><span>${esc(cl.title)}</span>${cl.note ? `<small>${esc(cl.note)}</small>` : ''}</div>
+        <div class="stile-d"><span>${esc(dueText(s))}</span><span class="cd ${c.soon ? 'soon' : ''}">${c.text}</span></div>${s.more ? `<div class="stile-m">then ${s.more} more open</div>` : ''}${s.flag ? `<div class="stile-f" title="${esc(s.flag)}">${esc(s.flag)}</div>` : ''}</div>`;
+    };
+    const fold = (key, title, list, foot) => list.length ? `<details class="later pgrp" data-grp="${key}" ${openGroups.has(key) ? 'open' : ''}><summary class="gh">${title} · ${list.length}</summary><div class="group">${list.map(card).join('')}</div>${foot ? `<p class="foot">${foot}</p>` : ''}</details>` : '';
+    const sub = [`${n.working} in progress`, n.on_hold ? `${n.on_hold} on hold` : '', n.decisions ? `${n.decisions} question${n.decisions > 1 ? 's' : ''} for you` : ''].filter(Boolean).join(' · ');
+    let html = `<h1>Projects</h1><p class="subtitle">${esc(sub)}</p>${banner()}`;
+    if (P.decisions.length) html += `<div class="gh">Your call · ${P.decisions.length}</div><div class="group">${P.decisions.map(ask).join('')}</div>`;
+    html += `<div class="gh">In progress · ${P.working.length}</div><div class="group">${P.working.map(card).join('') || '<div class="empty">Nothing marked active.</div>'}</div>`;
+    if (P.on_hold.length) html += `<div class="gh">On hold · ${P.on_hold.length}</div><div class="group">${P.on_hold.map(card).join('')}</div>`;
+    if (P.studies.length) html += `<div class="gh ghl"><span>Studies · next graded work</span><a href="#upcoming">All deadlines</a></div><div class="stiles">${P.studies.map(tile).join('')}</div>`;
+    html += fold('ideas', 'Ideas', P.ideas) + fold('completed', 'Completed', P.completed, 'Completed entries feed the CV: keep the outcome current.')
+      + fold('courses', 'Course entries', P.courses, 'Course dates come from BB Tracker, so a course card shows only its next graded item.') + fold('archived', 'Archived', P.archived);
+    return html + '<p class="foot">Order: focus this week, then graded and paid work, then by the newest real commit (automatic backup commits are ignored; hover the time for the message). Git housekeeping is the small grey line. Changing a status marks it confirmed. Fields save when you leave them.</p>';
   },
   inbox() {
     const done = (D.inbox_log || []).flatMap(e => e.results.map(r => ({...r, at: e.at}))).slice(0, 12);
@@ -1074,6 +1120,14 @@ function bind() {
   p.querySelectorAll('select[data-n]').forEach(sel => sel.onchange = async () => { await api('/api/registry/' + sel.dataset.n, {status: sel.value}); load(); });
   p.querySelectorAll('[data-f]').forEach(el => el.onchange = async () => { await api('/api/registry/' + el.dataset.p, {[el.dataset.f]: el.value}); load(); });
   p.querySelectorAll('[data-draft]').forEach(b => b.onclick = async () => { await api('/api/registry/' + b.dataset.draft, {confirm_drafts: true}); load(); });
+  p.querySelectorAll('button[data-pset]').forEach(b => b.onclick = async () => { b.disabled = true; try { await api('/api/registry/' + b.dataset.p, JSON.parse(b.dataset.pset)); } catch { b.disabled = false; return; } load(); });
+  p.querySelectorAll('details[data-grp]').forEach(d => d.ontoggle = () => openGroups[d.open ? 'add' : 'delete'](d.dataset.grp));
+  // A question's title opens that project's card (and the folded group it sits in) and scrolls to it.
+  p.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => {
+    const r = p.querySelector(`.pr[data-name="${CSS.escape(b.dataset.goto)}"]`); if (!r) return;
+    const g = r.closest('details'); if (g) { g.open = true; openGroups.add(g.dataset.grp); }
+    r.classList.add('open'); openRows.add(b.dataset.goto); r.scrollIntoView({block: 'center', behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto' : 'smooth'});
+  });
   const il = $('inbox-load');
   if (il) il.onclick = async () => {
     $('inbox-body').textContent = 'Checking…';

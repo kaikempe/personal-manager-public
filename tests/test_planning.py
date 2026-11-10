@@ -312,6 +312,14 @@ class InboxCommands(unittest.TestCase):
         self.assertEqual(results[0]["summary"], "Not done: browser gone")
         self.assertTrue(results[0]["needs_user"])
 
+    def test_a_plain_string_pattern_works_too(self):
+        class StrPlugin:
+            INBOX_LINE = r"do it\b"      # plugins/README.md allows a string; it is matched case-insensitively
+        self.plugin = StrPlugin
+        rest, results = self.run_cmds(lambda t, c: "ok")
+        self.assertEqual([i["key"] for i in rest], ["r2", "pass.png"])
+        self.assertEqual(results[0]["summary"], "ok")
+
 
 class GymProposalsOnThePhone(unittest.TestCase):
     """The phone shows the review and the open weight proposals; a tap there is applied on the Mac."""

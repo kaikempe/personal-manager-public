@@ -111,6 +111,8 @@ def plugin_commands(items, hooks=None, tick=None):
         for mod, fn in hooks:
             # A dry call decides who owns the line; plugins expose that as INBOX_LINE (a regex) so nothing runs yet.
             pat = getattr(mod, "INBOX_LINE", None)
+            if isinstance(pat, str):   # README allows a plain pattern string as well as a compiled regex
+                pat = re.compile(pat, re.I)
             if pat is not None and pat.match(it["text"]):
                 claimed = fn
                 break
@@ -231,7 +233,8 @@ def main():
                                 "error": None}] + log["entries"])[:50]
             LOG.write_text(json.dumps(log, indent=1, ensure_ascii=False))
             for r in commands:   # the command came from the phone, so the answer goes back there
-                notify("Inbox command", r["summary"], phone=True)
+                if not r["summary"].lower().startswith("already handled"):   # the direct request has answered already
+                    notify("Inbox command", r["summary"], phone=True)
     if not items:
         return 0
     prompt = prompt_for(items)

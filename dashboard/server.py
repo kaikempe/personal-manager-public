@@ -141,7 +141,7 @@ def registry():
     return out
 
 
-TEXT_FIELDS = {"summary", "next", "waiting", "revisit"}
+TEXT_FIELDS = {"summary", "next", "waiting", "revisit", "outcome"}
 CHOICES = {"purpose": {"", "graded", "paid", "own"}, "this_week": {"", "focus", "pause"}}
 
 
@@ -178,6 +178,202 @@ def set_registry(name, body):
         if not n:
             text = text.replace("\n---\n", f"\n{k}: {v}\n---\n".replace(": \n", ":\n"), 1)
     p.write_text(text)
+
+
+# ---------- Projects page: what it shows, in what order, and which questions go to the user ----------
+# Pure functions of the registry rows and `now`, so the rules are tested (tests/test_projects.py); the page only draws.
+TITLE_ACRONYMS = {"AI", "API", "CLI", "CV", "HUD", "ML", "MVP", "SDK", "SME", "UI", "UX"}   # PM_ACRONYMS adds more
+TITLE_SMALL = {"a", "an", "and", "for", "in", "of", "on", "the", "to", "with"}
+KIND_LABEL = {"project": "Project", "venture": "Venture", "internship": "Internship", "course": "Course",
+              "tool": "Tool", "programme": "Programme"}
+NO_NEXT = {"", "-", "none", "n/a", "nothing"}
+STALE_DAYS = 30    # "active" with no real commit for longer than this is a question (same as check_status.py)
+RECENT_DAYS = 14   # archived/completed with a real commit this recent is a question
+
+
+def project_title(name, acronyms=()):
+    """A readable title from a registry slug: "ai-implementation-sme" -> "AI Implementation SME". A name that already
+    has capitals or spaces was written by hand and is kept as it is."""
+    name = (name or "").strip()
+    if not name or re.search(r"[A-Z\s]", name):
+        return name
+    caps = TITLE_ACRONYMS | {a.upper() for a in acronyms}
+    words = [w for w in re.split(r"[-_]+", name) if w]
+    return " ".join(w.upper() if w.upper() in caps else w if i and w in TITLE_SMALL else w[:1].upper() + w[1:]
+                    for i, w in enumerate(words))
+
+
+def days_since(day, today):
+    try:
+        return (today - datetime.fromisoformat(str(day)[:10]).date()).days
+    except ValueError:
+        return None
+
+
+def ago_text(days):
+    """Relative time of the last real work: "today", "3 days ago", "5 weeks ago". Empty when unknown."""
+    if days is None:
+        return ""
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days} days ago"
+    if days < 60:
+        return f"{round(days / 7)} weeks ago"
+    if days < 365:
+        return f"{round(days / 30)} months ago"
+    n = round(days / 365)
+    return f"{n} year{'s' if n > 1 else ''} ago"
+
+
+def _n(n, word):
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def git_hints(r):
+    """Housekeeping about a live entry's folder (unpushed, unmerged branch, ...): a small hint on its card, never a
+    question and never a section of its own."""
+    if r.get("status") in ("archived", "completed"):
+        return []
+    x = []
+    if r.get("unpushed"):
+        x.append(f"{_n(r['unpushed'], 'commit')} not pushed")
+    if r.get("unmerged_branch"):
+        x.append(f"latest work on branch {r['unmerged_branch']}")
+    if r.get("uncommitted"):
+        x.append(_n(r["uncommitted"], "uncommitted change"))
+    if r.get("path") and not r.get("has_git"):
+        x.append("folder not in git")
+    elif r.get("has_git") and not r.get("repo"):
+        x.append("no remote backup")
+    if r.get("backup_only"):
+        x.append("only automatic backup commits")
+    return x
+
+
+def revisit_date(text):
+    """The revisit value as a date, when it is one; a trigger in words ("after the exams") is not."""
+    t = (text or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
+        return None
+    try:
+        return datetime.fromisoformat(t).date()
+    except ValueError:
+        return None
+
+
+def project_questions(c, today):
+    """What only the user can answer about one entry, as (reason, question) pairs. Git housekeeping is not here.
+    An active entry set to "not this week" (this_week: pause) is idle on purpose, so it is not asked about."""
+    st, idle, out = c["status"], c.get("idle_days"), []
+    if st == "unknown":
+        out.append(("unknown", "Not classified yet. Is it active, on hold, an idea, or archived?"))
+    elif c.get("confirmed") != "true" or "status" in c.get("drafted_fields", []):
+        out.append(("unconfirmed", f"Marked {st} from the evidence, not by you. Is that right?"))
+    if st == "active" and c.get("week") != "pause" and idle is not None and idle > STALE_DAYS and not c.get("backup_only"):
+        out.append(("stale", f"Marked active, but the last commit was {idle} days ago. Still active, or on hold?"))
+    if st == "on-hold":
+        rv = revisit_date(c.get("revisit"))
+        if not (c.get("revisit") or "").strip():
+            out.append(("no_revisit", "On hold with no revisit date or trigger. When should it come back?"))
+        elif rv and rv <= today:
+            out.append(("revisit_due", f"Its revisit date ({rv.isoformat()}) has come. Pick it up again, or set a new date?"))
+    if st == "completed" and not (c.get("outcome") or "").strip():
+        out.append(("no_outcome", "Completed, but no outcome written. What shipped, and when?"))
+    if st in ("archived", "completed") and idle is not None and idle <= RECENT_DAYS and not c.get("backup_only"):
+        out.append(("recent_work", f"Marked {st}, but there was a commit {ago_text(idle)}. Active again?"))
+    return out
+
+
+def project_card(r, today, acronyms=()):
+    """One registry row plus what the page shows about it: title, relative activity, next step, hints, questions."""
+    c = dict(r)
+    c["status"] = r.get("status") if r.get("status") in STATUSES else "unknown"
+    c["title"] = project_title(r.get("name") or r.get("file"), acronyms)
+    c["kind_label"] = KIND_LABEL.get(r.get("kind"), (r.get("kind") or "").capitalize())
+    c["week"] = r.get("this_week") if r.get("this_week") in ("focus", "pause") else ""
+    c["idle_days"] = days_since(r["last_active"], today) if r.get("last_active") else None
+    c["ago"] = ago_text(c["idle_days"])
+    c["stale"] = c["status"] == "active" and c["idle_days"] is not None and c["idle_days"] > STALE_DAYS
+    nxt = (r.get("next") or "").strip()
+    c["next_step"] = "" if nxt.rstrip(".").lower() in NO_NEXT else nxt
+    c["drafted_fields"] = [x.strip() for x in (r.get("drafted") or "").split(",") if x.strip()]
+    c["hints"] = git_hints(c)
+    qs = project_questions(c, today)
+    c["reasons"], c["questions"] = [k for k, _ in qs], [q for _, q in qs]
+    return c
+
+
+def _work_order(c):
+    """Focus this week first and "not this week" last; between them graded, then paid work (the priority rule), then
+    by recent activity: worked on in the last 30 days (newest first), no activity data, idle longer."""
+    idle = c["idle_days"]
+    band = 1 if idle is None else 2 if idle > STALE_DAYS else 0
+    return (c["status"] == "unknown", {"focus": 0, "pause": 2}.get(c["week"], 1),
+            {"graded": 0, "paid": 1}.get(c.get("purpose"), 2), band, idle or 0, c["title"].lower())
+
+
+def _course_key(s):
+    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
+def course_entry_for(course, entries):
+    """The registry course entry that names this tracker course ("applied-statistics" ~ "APPLIED STATISTICS")."""
+    k = _course_key(course)
+    for c in entries:
+        t = _course_key(c.get("name") or c.get("file"))
+        if k and t and (t == k or k.startswith(t + " ") or t.startswith(k + " ")):
+            return c
+    return None
+
+
+def studies(deadlines, now, entries=()):
+    """One line per course with open graded work: its next item and how many more follow. Built from the tracker's
+    open deadlines on every request, never from registry text (that goes stale), and an item whose time has passed
+    or whose date is unclear is never shown as coming up."""
+    by = {}
+    for d in deadlines:
+        due, end = _when(d.get("due")), _when(d.get("ends") or d.get("due"))
+        if d.get("unclear") or not due or not end or end < now:
+            continue
+        by.setdefault(d.get("course") or "", []).append((due, d))
+    out = []
+    for course, ds in by.items():
+        ds.sort(key=lambda x: x[0])
+        d, e = ds[0][1], course_entry_for(course, entries)
+        out.append({"course": course, "title": d.get("title") or "", "due": d["due"], "kind": d.get("kind"),
+                    "flag": d.get("flag"), "more": len(ds) - 1, "entry": e["file"] if e else "",
+                    "focus": bool(e and e.get("week") == "focus"), "_at": ds[0][0]})
+    out.sort(key=lambda s: s.pop("_at"))
+    return out
+
+
+QUESTION_ORDER = ["unknown", "unconfirmed", "revisit_due", "no_revisit", "stale", "recent_work", "no_outcome"]
+
+
+def projects_page(rows, deadlines, now, acronyms=()):
+    """Everything the Projects page shows, grouped and ordered. `rows` are registry() rows (with git facts)."""
+    today = now.date()
+    cards = [project_card(r, today, acronyms) for r in rows]
+    by_title = lambda cs: sorted(cs, key=lambda c: c["title"].lower())  # noqa: E731
+    courses = [c for c in cards if c.get("kind") == "course"]
+    rest = [c for c in cards if c.get("kind") != "course"]
+    pick = lambda *st: [c for c in rest if c["status"] in st]  # noqa: E731
+    study = studies(deadlines, now, courses)
+    for c in courses:
+        c["live_next"] = next((s for s in study if s["entry"] == c["file"]), None)
+    decisions = sorted(({k: c.get(k) for k in ("file", "title", "status", "kind_label", "revisit", "reasons", "questions")}
+                        for c in cards if c["questions"]),
+                       key=lambda d: (min(QUESTION_ORDER.index(r) for r in d["reasons"]), d["title"].lower()))
+    working = sorted(pick("active", "unknown"), key=_work_order)
+    on_hold = by_title(pick("on-hold"))
+    return {"working": working, "on_hold": on_hold, "ideas": by_title(pick("idea")),
+            "completed": by_title(pick("completed")), "archived": by_title(pick("archived")),
+            "courses": sorted(courses, key=lambda c: (c["status"] not in ("active", "unknown"), c["title"].lower())),
+            "studies": study, "decisions": decisions,
+            "counts": {"working": len(working), "on_hold": len(on_hold), "decisions": len(decisions)}}
 
 
 def load_items():
@@ -328,6 +524,9 @@ def open_deadlines(rows, now, events=(), write_calendar=None):
     # "submitted" is handed in and waiting for a grade: the tracker ticks it off, so it is not open work here either.
     raw = [settle(checked_date(d)) for d in rows if not d.get("done") and d.get("status") != "submitted" and d.get("due")]
     raw = [d for d in raw if current(d)]
+    # The tracker can hold the same row twice (same course, title, start, end, kind): one row on the page.
+    seen = set()
+    raw = [d for d in raw if (k := (d.get("course"), d.get("title"), d.get("due"), d.get("ends"), d.get("kind"), d.get("source"))) not in seen and not seen.add(k)]
     # Blackboard gradebook rows ("Midterm ... Version A") are UTC and describe an exam that the
     # timetable "exam" row already carries: keep the exam row, drop same-course same-day gradebook copies.
     exam_days = {(d.get("course"), to_local(d["due"])[:10]) for d in raw if d.get("source") == "exam"}
@@ -376,13 +575,16 @@ def overview():
                  "skipped": read_json(DATA / "data/mail_skipped.json", {"mails": []})["mails"][:30]},
         "health": health_rows(),
         "inbox_log": read_json(DATA / "data/inbox_log.json", {"entries": []})["entries"][:10],
-        "registry": registry(),
+        "registry": (reg := registry()),
+        "projects": projects_page(reg, deadlines, datetime.now(TZ), pm_env.get_list("PM_ACRONYMS")),
         "gym": {**gym_export.summary(), "log": gym_export.load(), "plan": {d: {"title": v.get("title", ""), "order": [e["name"] for e in v.get("exercises", [])]}
                                                  for d, v in read_json(DATA / "gym/plan.json", {}).get("days", {}).items()},
                 "review": read_json(DATA / "data/gym_review.json", {}),
                 "proposals": [p for p in read_json(DATA / "data/gym_proposals.json", {"proposals": []})["proposals"] if p["status"] == "pending"]},
         "state_md": (DATA / "state.md").read_text() if (DATA / "state.md").exists() else "",
         "statuses": STATUSES,
+        "write_calendar": pm_env.WRITE_CALENDAR,
+        "course_filler": sorted(COURSE_FILLER),
         "owner": pm_env.OWNER,
         "acronyms": pm_env.get_list("PM_ACRONYMS"),
         "demo": pm_env.DEMO,
