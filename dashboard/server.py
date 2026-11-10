@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -246,9 +247,11 @@ def checked_date(d):
 
     The tracker can move an exam to a date an announcement states and keeps the timetable's date beside it. A move to
     a time BEFORE the announcement was posted cannot be right (seen 2026-11-09: a quiz "moved" to the morning of the
-    post, because the post also named another deadline; every list then dropped the quiz as over). Such a row keeps
-    the timetable's date and gets a flag telling the user to read the announcement. A plausible move is kept and says
-    where it came from."""
+    post, because the post also named another deadline). The timetable's date is not right either (the post moved the
+    exam), so such a row has NO date: it gets `unclear` (both candidate dates, the announcement and when it was posted)
+    and a flag telling the user to read the announcement. `due` still holds the timetable date, only so the row can be
+    sorted; nothing may present it as a deadline (see `open_deadlines`). A plausible move is kept and says where it
+    came from."""
     if d.get("date_source") != "announcement" or not d.get("timetable_due"):
         return d
     src = d.get("date_from") or {}
@@ -256,25 +259,81 @@ def checked_date(d):
     name = f'announcement "{src.get("title")}"' if src.get("title") else "an announcement"
     if due and posted and due < posted:
         return {**d, "due": d["timetable_due"], "ends": d.get("timetable_ends"),
-                "flag": f"date unclear: {name} changed it, read it"}
+                "flag": f"date unclear: {name} changed it, read it",
+                "unclear": {"timetable": d["timetable_due"], "announced": d.get("due"), "posted": src.get("created"),
+                            "announcement": src.get("title")}}
     was = _when(d["timetable_due"])
     return {**d, "flag": f"moved by {name}" + (f" (was {was.astimezone(TZ):%a %-d %b %H:%M})" if was else "")}
 
 
-def open_deadlines(rows, now):
+KIND_WORDS = {"quiz": ("quiz",), "midterm": ("midterm", "mid-term"), "exam": ("exam", "final"), "final": ("final", "exam"),
+              "test": ("test",)}
+COURSE_FILLER = {"for", "the", "and", "with", "introduction", "intro", "computer", "science", "sciences", "fundamentals",
+                 "advanced", "applied", "principles", "foundations", "topics", "studies"}
+SETTLE_DAYS = 21     # an announced exam date is looked for this long after the announcement
+UNCLEAR_DAYS = 14    # a row with an unclear date stays visible this long after the announcement
+
+
+def _words(text):
+    return re.findall(r"[a-zà-ÿ0-9]+", str(text).lower())
+
+
+def settle_from_calendar(row, events, write_calendar):
+    """The user's own calendar, asked when a row's date is unclear: ONE event in the writable calendar that starts
+    between the announcement and SETTLE_DAYS after it, and names both the course (a distinctive word of its name) and
+    the kind of exam. Returns that event or None (none, or several: then nothing is guessed)."""
+    u = row.get("unclear") or {}
+    posted = _when(u.get("posted"))
+    if not posted:
+        return None
+    kinds = next((KIND_WORDS[w] for w in [str(row.get("kind") or "").lower(), *_words(row.get("title"))] if w in KIND_WORDS), ())
+    course = [w for w in _words(row.get("course")) if len(w) >= 4 and w not in COURSE_FILLER] \
+        or [w for w in _words(row.get("course")) if len(w) >= 4]
+    if not kinds or not course:
+        return None
+    hits = []
+    for e in events:
+        t = _when(e.get("start"))
+        if e.get("calendar") != write_calendar or not t or not posted <= t <= posted + timedelta(days=SETTLE_DAYS):
+            continue
+        words = set(_words(e.get("title")))
+        if any(c in words for c in course) and any(k in words or k in str(e.get("title")).lower() for k in kinds):
+            hits.append(e)
+    return hits[0] if len(hits) == 1 else None
+
+
+def open_deadlines(rows, now, events=(), write_calendar=None):
     """Open deadlines from the tracker, soonest first, each with a local `due` and, where its date needs a second
-    look, a `flag`."""
+    look, a `flag`. A row whose date is unclear is settled from the user's calendar when exactly one event fits
+    (`settle_from_calendar`; flag 'date from your calendar: "…"'). Otherwise it keeps `unclear` (see `checked_date`) and
+    stays in the list for UNCLEAR_DAYS after the announcement, however far the timetable date is in the past.
+    `overview()` keeps those rows out of every dated list."""
+    write_calendar = write_calendar or pm_env.WRITE_CALENDAR
     def over(d):  # an exam or deadline is over once its end (or, with no end, its due time) has passed
         t = _when(d.get("ends") or d.get("due"))
         return bool(t and t < now)
+    def settle(d):
+        if not d.get("unclear"):
+            return d
+        hit = settle_from_calendar(d, events, write_calendar)
+        if not hit:
+            return d
+        return {**{k: v for k, v in d.items() if k != "unclear"}, "due": hit["start"], "ends": hit.get("end"),
+                "flag": f'date from your calendar: "{hit["title"]}"', "from_calendar": True}
+    def current(d):
+        if d.get("unclear"):
+            posted = _when(d["unclear"].get("posted"))
+            return bool(posted and now - posted <= timedelta(days=UNCLEAR_DAYS))
+        return to_local(d["due"])[:10] >= now.date().isoformat() and not over(d)
     # "submitted" is handed in and waiting for a grade: the tracker ticks it off, so it is not open work here either.
-    raw = [checked_date(d) for d in rows if not d.get("done") and d.get("status") != "submitted" and d.get("due")]
-    raw = [d for d in raw if to_local(d["due"])[:10] >= now.date().isoformat() and not over(d)]
+    raw = [settle(checked_date(d)) for d in rows if not d.get("done") and d.get("status") != "submitted" and d.get("due")]
+    raw = [d for d in raw if current(d)]
     # Blackboard gradebook rows ("Midterm ... Version A") are UTC and describe an exam that the
     # timetable "exam" row already carries: keep the exam row, drop same-course same-day gradebook copies.
     exam_days = {(d.get("course"), to_local(d["due"])[:10]) for d in raw if d.get("source") == "exam"}
     out = [
-        {**{k: d.get(k) for k in ("course", "title", "due", "ends", "kind", "location", "source", "flag")}, "due": to_local(d["due"])}
+        {**{k: d.get(k) for k in ("course", "title", "due", "ends", "kind", "location", "source", "flag", "unclear", "from_calendar")},
+         "due": to_local(d["due"]), "ends": to_local(d["ends"]) if d.get("from_calendar") and d.get("ends") else d.get("ends")}
         for d in raw
         if not (d.get("source") != "exam" and (d.get("course"), to_local(d["due"])[:10]) in exam_days)
     ]
@@ -282,17 +341,36 @@ def open_deadlines(rows, now):
     return out
 
 
+def task_when(item, today):
+    """Where an open task sits in time. `due` is a deadline. `start` only means "can start from that day", never a
+    deadline: before it the task is a later item, from it on an open task without a deadline.
+    Returns {"kind": "due"|"later"|"open"|"none", "date": ISO date or None, "hint": text for the row}."""
+    due, start = str(item.get("due") or ""), str(item.get("start") or "")[:10]
+    if due:
+        return {"kind": "due", "date": due, "hint": ""}
+    if start:
+        label = f"{int(start[8:10])} {datetime.fromisoformat(start):%b}"
+        if start > today:
+            return {"kind": "later", "date": start, "hint": f"from {label}"}
+        return {"kind": "open", "date": None, "hint": "can start today" if start == today else f"can start since {label}"}
+    return {"kind": "none", "date": None, "hint": ""}
+
+
 def overview():
     cal, events = calendar_events()
     status = read_json(DATA / "data/export_status.json", {})
     bb = read_json(BB_DATA, {})
     now = datetime.now(TZ).isoformat(timespec="seconds")
-    deadlines = open_deadlines(bb.get("deadlines", []), datetime.now(TZ))
+    now_dt = datetime.now(TZ)
+    every = open_deadlines(bb.get("deadlines", []), now_dt, events, pm_env.WRITE_CALENDAR)
+    deadlines = [d for d in every if not d.get("unclear")]
+    unclear = [d for d in every if d.get("unclear")]
+    items = [{**i, "when": task_when(i, now[:10])} if i.get("type") == "task" else i for i in load_items()["items"]]
     return {
         "now": now,
         "calendar": {"generated_at": cal.get("generated_at"), "ok": status.get("ok"), "error": status.get("error"), "events": events},
-        "bb": {"timestamp": bb.get("timestamp"), "error": bb.get("error"), "deadlines": deadlines},
-        "items": load_items()["items"],
+        "bb": {"timestamp": bb.get("timestamp"), "error": bb.get("error"), "deadlines": deadlines, "unclear": unclear},
+        "items": items,
         "proposals": proposals_store.load()["proposals"],
         "mail": {**read_json(DATA / "data/mail_status.json", {}), "running": mail_running(),
                  "skipped": read_json(DATA / "data/mail_skipped.json", {"mails": []})["mails"][:30]},
@@ -423,6 +501,8 @@ def chat_context(messages=()):
               if today <= e["start"][:10] < horizon and not re.search(r"holiday|feiertage|birthdays", e["calendar"], re.I)]
     deadlines = [f'{d["due"]} | {d["course"]}: {d["title"]}' + (f' | {d["location"]}' if d.get("location") else "")
                  + (f' | NOTE: {d["flag"]}' if d.get("flag") else "") for d in o["bb"]["deadlines"]]
+    deadlines += [f'DATE UNCLEAR | {d["course"]}: {d["title"]} | timetable said {d["unclear"]["timetable"]}, announcement "{d["unclear"].get("announcement")}" changed it | not a deadline on any day until the user reads it'
+                  for d in o["bb"].get("unclear", [])]
     reg = []
     for r in o["registry"]:
         bits = [r.get("name"), r.get("kind"), f'status={r.get("status")}', f'confirmed={r.get("confirmed")}']
@@ -1011,7 +1091,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send(400, {"error": str(e)})
 
 
+class LocalServer(ThreadingHTTPServer):
+    """Binds without HTTPServer's reverse DNS lookup (socket.getfqdn), which stalled startup for over 20 s on GitHub's
+    macOS runners. It only listens on 127.0.0.1, so the name is not needed."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 if __name__ == "__main__":
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    srv = LocalServer(("127.0.0.1", PORT), Handler)
     print(f"dashboard on http://127.0.0.1:{PORT}", file=sys.stderr)
     srv.serve_forever()

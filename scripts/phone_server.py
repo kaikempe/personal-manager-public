@@ -26,6 +26,7 @@ import sys
 import threading
 import time
 from datetime import datetime
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -277,7 +278,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, f"Something went wrong: {str(e)[:200]}")
 
 
+class LocalServer(ThreadingHTTPServer):
+    """Binds without HTTPServer's reverse DNS lookup (socket.getfqdn), which stalled startup for over 20 s on GitHub's
+    macOS runners. It only listens on 127.0.0.1, so the name is not needed."""
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 if __name__ == "__main__":
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    srv = LocalServer(("127.0.0.1", PORT), Handler)
     print(f"phone endpoint on http://127.0.0.1:{PORT}", file=sys.stderr)
     srv.serve_forever()

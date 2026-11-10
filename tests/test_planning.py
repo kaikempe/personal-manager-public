@@ -44,11 +44,13 @@ class DeadlineDates(unittest.TestCase):
             "date_source": "announcement",
             "date_from": {"title": "Quiz 2 and Problem Set 4", "created": "2026-11-09T10:15:39.504Z"}}
 
-    def test_a_move_to_before_the_announcement_keeps_the_timetable_date_and_is_flagged(self):
+    def test_a_move_to_before_the_announcement_leaves_the_row_without_a_date(self):
         # Seen 2026-11-09: the post was written at 11:15, the quiz "moved" to 09:00 that morning, and the row
-        # vanished from every list as already over.
+        # vanished from every list as already over. Changed 2026-11-10: the timetable date is not right either, so
+        # the row stays (sortable by it) but carries `unclear` instead of passing as a deadline; tests/test_upcoming.py
+        # pins what the pages and the phone do with it.
         [row] = server.open_deadlines([self.QUIZ], self.NOW)
-        self.assertEqual(row["due"][:16], "2026-11-10T09:00")
+        self.assertEqual(row["unclear"]["timetable"][:16], "2026-11-10T09:00")
         self.assertIn("date unclear", row["flag"])
         self.assertIn("Quiz 2 and Problem Set 4", row["flag"])
 
@@ -229,10 +231,13 @@ class HourlyAlerts(unittest.TestCase):
         self.assertTrue(sent[1][1].startswith("On tomorrow: Labs fair"))
 
     def test_an_unclear_deadline_date_reaches_the_phone(self):
-        d = {"course": "CALCULUS", "title": "Quiz", "due": "2026-11-10T09:00+01:00", "flag": 'date unclear: announcement "Q" changed it, read it'}
+        # Changed 2026-11-10: unclear rows come in `bb.unclear` (not in the dated list) and the text says what is known.
+        d = {"course": "CALCULUS", "title": "Quiz", "due": "2026-11-10T09:00+01:00",
+             "unclear": {"timetable": "2026-11-10T09:00+01:00", "announcement": "Q", "posted": "2026-11-09T10:15:00Z"}}
         ok = {"course": "CALCULUS", "title": "Exam", "due": "2026-12-11T11:30+01:00", "flag": 'moved by announcement "X"'}
-        sent, _ = self.run_alerts({"bb": {"deadlines": [d, ok]}})
+        sent, _ = self.run_alerts({"bb": {"deadlines": [ok], "unclear": [d]}})
         self.assertEqual([k for k, _ in sent], ["deadline-flag:CALCULUS:Quiz:2026-11-10"])
+        self.assertIn("the date is unclear (timetable says Tue 10 Nov 09:00", sent[0][1])
 
     def test_undated_tasks_are_called_out_on_sunday(self):
         import state_refresh

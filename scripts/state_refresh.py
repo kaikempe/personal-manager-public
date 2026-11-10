@@ -51,6 +51,8 @@ def undated_days(item, today):
     """Days an open task has existed without a due date, or None (it has a date, waits on someone, or no created date)."""
     if item.get("due") or item.get("blocked_by") or not item.get("created"):
         return None
+    if str(item.get("start") or "")[:10] > today.isoformat():   # "can start from" a later day: nothing is late yet
+        return None
     try:
         return (today - datetime.fromisoformat(str(item["created"])[:10]).date()).days
     except ValueError:
@@ -70,8 +72,7 @@ def build(o):
     for d in o["bb"]["deadlines"]:
         day = d["due"][:10]
         if today.isoformat() <= day <= horizon and datetime.fromisoformat(d["due"]) >= now - timedelta(hours=1):
-            by_day.setdefault(day, []).append((d["due"], f"{d['title']} ({nice(d['course'])}) {d['due'][11:16]}"
-                                               + (" [date unclear, see below]" if (d.get("flag") or "").startswith("date unclear") else "")))
+            by_day.setdefault(day, []).append((d["due"], f"{d['title']} ({nice(d['course'])}) {d['due'][11:16]}"))
     for i in o["items"]:
         if i.get("type") == "task" and i.get("status") != "done" and i.get("due") and today.isoformat() <= i["due"][:10] <= horizon:
             by_day.setdefault(i["due"][:10], []).append((i["due"], f"{i['title']} (task)"))
@@ -84,16 +85,21 @@ def build(o):
     out += ["", "## Deadlines (next 14 days, from BB Tracker)"]
     lim = (today + timedelta(days=14)).isoformat()
     rows = [d for d in o["bb"]["deadlines"] if d["due"][:10] <= lim]
+    unclear = o["bb"].get("unclear", [])
+    for d in unclear:   # no day: listed apart, never in the priorities
+        u = d["unclear"]
+        out.append(f"- DATE UNCLEAR | {nice(d['course'])}: {d['title']} | timetable said {u['timetable'][:10]} {u['timetable'][11:16]}, "
+                   f"announcement \"{u.get('announcement')}\" changed it | read it; no calendar event settles it")
     for d in rows:
         loc = f" | {d['location']}" if d.get("location") else ""
         flag = f" | NOTE: {d['flag']}" if d.get("flag") else ""
         out.append(f"- {d['due'][:10]} {d['due'][11:16]} | {nice(d['course'])}: {d['title']}{loc}{flag}")
-    if not rows:
+    if not rows and not unclear:
         out.append("- none")
     tasks = [i for i in o["items"] if i.get("type") == "task" and i.get("status") != "done"]
     out += ["", "## Open tasks (items.json)"]
     for i in tasks:
-        due = f" | due {i['due']}" if i.get("due") else ""
+        due = f" | due {i['due']}" if i.get("due") else (f" | {(i.get('when') or {}).get('hint')}" if (i.get("when") or {}).get("hint") else "")
         blk = f" | waiting on {i['blocked_by']}" if i.get("blocked_by") else ""
         age = undated_days(i, today)
         old = f" | no date, open {age} days" if age is not None and age >= UNDATED_DAYS else ""
@@ -122,10 +128,12 @@ def alerts(o, now, prev_errors=(), send=None):
         what = "Due" if it.get("type") == "task" else "On"
         send(f'{what} {day.lower() if day in ("Today", "Tomorrow") else day}: {it.get("title")}. '
              "A suggestion from your mail, waiting on the dashboard.", phone=True, key=f'proposal:{p.get("id")}')
-    for d in o["bb"]["deadlines"]:
-        if (d.get("flag") or "").startswith("date unclear"):
-            send(f'{nice(d["course"])}: {d["title"]}, {d["flag"]}.', phone=True,
-                 key=f'deadline-flag:{d["course"]}:{d["title"]}:{d["due"][:10]}')
+    for d in o["bb"].get("unclear", []):   # open_deadlines drops a row the user's calendar settled
+        u = d["unclear"]
+        was = datetime.fromisoformat(u["timetable"])
+        send(f'{nice(d["course"])} {d["title"].lower()}: the date is unclear (timetable says '
+             f'{DAYS[was.weekday()]} {was.day} {MONTHS[was.month - 1]} {u["timetable"][11:16]}, an announcement changed it). '
+             "Read the announcement.", phone=True, key=f'deadline-flag:{d["course"]}:{d["title"]}:{u["timetable"][:10]}')
     if now.weekday() == 6 and now.hour >= 17:   # Sunday evening, with the weekly review: tasks that never got a date
         old = [i["title"] for i in o.get("items", []) if i.get("type") == "task" and i.get("status") not in ("done", "dropped")
                and (undated_days(i, now.date()) or 0) >= 2 * UNDATED_DAYS]

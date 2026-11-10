@@ -552,11 +552,13 @@ function collect(from, to) {
     // A flight in someone else's name ("Sam flight LH1804 ...") is shown but is not the user's time: no busy hours, no overlap.
     if (/\bflight\b|\bflies\b|\bflying\b/i.test(e.title) && !mine.test(e.title.trim())) { const r = rows[rows.length - 1]; r.theirs = true; r.cat = 'travel'; r.sub = ['Not your flight', e.location].filter(Boolean).join(' · '); }
   }
-  for (const d of D.bb.deadlines) if (inRange(dateOf(d.due)))
+  // A date taken from the user's own calendar event: that event is already a row, a second one would clash with itself.
+  for (const d of D.bb.deadlines) if (inRange(dateOf(d.due)) && !d.from_calendar)
     rows.push({day: dateOf(d.due), t: timeOf(d.due), te: d.ends && timeOf(d.ends), loc: d.location || '', cal: 'Blackboard', notes: d.note || '', title: `${nice(d.course || '')}: ${d.title}`, base: baseTitle(d.course || ''), kind: 'deadline', cat: 'deadline', sub: [d.note, d.location].filter(Boolean).join(' · ')});
   for (const i of D.items) {
     if (i.status === 'done') continue;
-    const s = i.start || i.due;
+    // On a task, `start` only means "can start from that day": it is not a date to show the task on. Events use it.
+    const s = i.type === 'task' ? i.due : (i.start || i.due);
     // Apple Calendar is the only source for events, flights and travel; items.json is only where they are filed from.
     if (['event', 'flight', 'travel'].includes(i.type)) continue;
     if (s && inRange(dateOf(s))) rows.push({day: dateOf(s), t: timeOf(s), te: i.end && dateOf(i.end) === dateOf(s) ? timeOf(i.end) : '', title: i.title, notes: i.notes || '', kind: i.type, cat: ({flight: 'travel', travel: 'travel', event: 'event', task: 'task'})[i.type] || i.type, sub: [i.who, i.confidence === 'estimated' ? 'estimated' : ''].filter(Boolean).join(' · ')});
@@ -785,25 +787,31 @@ const V = {
     const rows = D.bb.deadlines.map(d => ({when: d.due, title: d.title, sub: [nice(d.course || ''), d.note, d.flag].filter(Boolean).join(' · '), dl: true}));
     for (const i of D.items) if (i.type === 'task' && i.status !== 'done') {
       const blocked = i.blocked_by && byId[i.blocked_by]?.status !== 'done';
-      rows.push({when: i.due || i.start || '9999', title: i.title, sub: [blocked ? 'Waiting on ' + byId[i.blocked_by].title : '', i.notes].filter(Boolean).join(' · '), id: i.id});
+      // The server says where a task sits (`when`): a due date, a later start ("from 7 Nov"), or open with no deadline.
+      const w = i.when || {kind: i.due ? 'due' : 'none', date: i.due || null, hint: ''};
+      rows.push({when: w.date || '9999', hint: w.hint, soft: w.kind === 'later', title: i.title, sub: [blocked ? 'Waiting on ' + byId[i.blocked_by].title : '', w.kind === 'open' ? w.hint : '', i.notes].filter(Boolean).join(' · '), id: i.id});
     }
     rows.sort((a,b) => a.when.localeCompare(b.when));
     const today = D.now.slice(0,10), tm = addDays(today, 1), horizon = addDays(today, 14), d10 = r => r.when.slice(0,10);
     const shortDay = d => `${DAYS[dowOf(d)]} ${+d.slice(8)} ${MONTHS[+d.slice(5,7) - 1].slice(0,3)}`;
     const row = (r, showDate) => {
       const cd = r.when === '9999' ? null : cdOf(r.when), hot = cd && cd.soon;
-      const dt = !cd ? '' : showDate ? `${shortDay(d10(r))}${timeOf(r.when) ? ' · ' + timeOf(r.when) : ''}` : timeOf(r.when);
+      const dt = r.soft ? r.hint : !cd ? '' : showDate ? `${shortDay(d10(r))}${timeOf(r.when) ? ' · ' + timeOf(r.when) : ''}` : timeOf(r.when);
       return `<div class="rem" data-rx><button class="circle ${r.dl ? 'dl' : ''} ${hot ? 'hot' : ''}" ${r.id ? `data-done="${esc(r.id)}"` : 'tabindex="-1" aria-hidden="true"'} aria-label="${r.id ? 'Mark done' : 'Graded deadline'}"></button>
-        <div class="txt"><span class="t">${esc(r.title)}</span><small class="clamp">${[esc(r.sub), dt].filter(Boolean).join(' · ')}</small></div>${cd ? `<span class="cd ${hot ? 'soon' : ''}">${cd.text}</span>` : ''}</div>`;
+        <div class="txt"><span class="t">${esc(r.title)}</span><small class="clamp">${[esc(r.sub), dt].filter(Boolean).join(' · ')}</small></div>${cd && !r.soft ? `<span class="cd ${hot ? 'soon' : ''}">${cd.text}</span>` : ''}</div>`;
     };
-    const dated = rows.filter(r => r.when !== '9999'), undated = rows.filter(r => r.when === '9999');
-    let L = '';
+    // A deadline with an unclear date has no day: it is listed apart, never under Today or Overdue.
+    const fmtAt = iso => `${shortDay(iso.slice(0, 10))} ${timeOf(iso)}`;
+    const unclear = (D.bb.unclear || []).map(d => `<div class="rem" data-rx><button class="circle dl" tabindex="-1" aria-hidden="true"></button>
+        <div class="txt"><span class="t">${esc(d.title)}</span><small class="clamp">${esc(nice(d.course || ''))} · The timetable said ${esc(fmtAt(d.unclear.timetable))}${d.unclear.announcement ? `; the announcement “${esc(d.unclear.announcement)}” changed it` : '; an announcement changed it'}. Read the announcement.</small></div></div>`);
+    const dated = rows.filter(r => r.when !== '9999' && !r.soft), undated = rows.filter(r => r.when === '9999');
+    let L = unclear.length ? `<div class="gh">Date unclear · ${unclear.length}</div><div class="group">${unclear.join('')}</div>` : '';
     const over = dated.filter(r => d10(r) < today);
     if (over.length) L += `<div class="gh">Overdue · ${over.length}</div><div class="group">${over.map(r => row(r)).join('')}</div>`;
     for (const d of [...new Set(dated.filter(r => d10(r) >= today && d10(r) < horizon).map(d10))])
       L += `<div class="gh">${d === today || d === tm ? heading(d, today) + ' · ' + shortDay(d) : longDay(d)}</div><div class="group">${dated.filter(r => d10(r) === d).map(r => row(r)).join('')}</div>`;
     if (!L) L = '<div class="group"><div class="empty">Nothing due in the next two weeks.</div></div>';
-    const later = dated.filter(r => d10(r) >= horizon);
+    const later = [...dated.filter(r => d10(r) >= horizon), ...rows.filter(r => r.soft)].sort((a, b) => a.when.localeCompare(b.when));
     let R = '';
     if (undated.length) R += `<div class="gh">No date · ${undated.length}</div><div class="group">${undated.map(r => row(r)).join('')}</div>`;
     if (later.length) R += `<details class="later" ${laterOpen ? 'open' : ''}><summary class="gh">Later · ${later.length}</summary><div class="group">${later.map(r => row(r, true)).join('')}</div></details>`;
