@@ -1,12 +1,14 @@
 #!/bin/bash
 # Installs the LaunchAgent that keeps the Obsidian vault in step once a day at 21:30:
-# scripts/vault_daily.sh (vault_sync.py, the vault's health check, a git snapshot of the vault).
+# scripts/vault_daily.py (vault_sync.py, the vault's health check, a git snapshot of the vault).
+# The job's program is python3 itself: macOS allows it into iCloud Drive, and git then runs under that
+# permission (see the docstring of vault_daily.py). Install with the same python3 that has the permission.
 #
 #   ./scripts/install_vault.sh            install or update
 #   ./scripts/install_vault.sh --remove   stop and remove the LaunchAgent (vault and history stay)
 set -euo pipefail
 
-LABEL="com.personal-manager.vault"
+LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).vault"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/personal-manager-vault.log"
@@ -27,8 +29,7 @@ cat > "$PLIST" <<PLISTEOF
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
-  <array><string>/bin/bash</string><string>$ROOT/scripts/vault_daily.sh</string></array>
-  <key>EnvironmentVariables</key><dict><key>PY</key><string>$PY</string></dict>
+  <array><string>$PY</string><string>$ROOT/scripts/vault_daily.py</string></array>
   <key>WorkingDirectory</key><string>$ROOT</string>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
   <key>StandardOutPath</key><string>$LOG</string>

@@ -15,28 +15,27 @@ courses   BB Tracker courses.json -> 02 University/Courses/<note>.md, matched by
 hubs      every project, lesson or pattern that lists a tech hub in `stack` is linked from that hub.
 
 Only the generated section, the listed frontmatter fields and Claude-written summaries
-(`summary_by: claude`) are ever replaced. the user's own text is never touched.
+(`summary_by: claude`) are ever replaced. The user's own text is never touched.
 """
 import datetime
 import json
-import os
-import sys as _sys
-from pathlib import Path as _P
-for _d in (_P(__file__).resolve().parent, _P(__file__).resolve().parent.parent / "scripts"):
-    if (_d / "pm_env.py").exists():
-        _sys.path.insert(0, str(_d))
-import pm_env  # noqa: E402,F401  (loads config.env)
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VAULT = Path(os.environ.get("VAULT_DIR") or Path.home() / "Documents/Vault")
-BB_COURSES = Path.home() / "Library/Application Support/BBTracker/courses.json"
+sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+VAULT = pm_env.VAULT
+BB_COURSES = pm_env.BB_DATA.parent / "courses.json"
+UNIVERSITY = pm_env.get("PM_UNIVERSITY")
 STUDY_PACKS = Path.home() / "Documents/BB Tracker"
-ONEDRIVE = Path.home() / "Library/CloudStorage/OneDrive-IEUniversity"
-FIRST_YEAR = 25  # IE Year 1 is the 25-26 academic year
+ONEDRIVE = pm_env.path("PM_ONEDRIVE", "~/Library/CloudStorage/OneDrive")   # course files synced from OneDrive
 TODAY = datetime.date.today()
+# PM_FIRST_YEAR: two-digit start year of your Year 1 (25 = the 2025-26 academic year); default: this academic year
+FIRST_YEAR = int(pm_env.get("PM_FIRST_YEAR") or (TODAY.year % 100 - (TODAY.month < 8)))
+UNI = pm_env.get("PM_UNIVERSITY_SHORT") or UNIVERSITY   # short name in note headings, e.g. "TUM"
 STRUCTURE = "## Structure (from BB Tracker, stable facts only)"
 STUB = "_No study notes yet. Add key concepts, formulas and what was graded here._"
 STATUS_HEADINGS = [("active", "Active"), ("on-hold", "On-hold"), ("idea", "Idea"),
@@ -265,7 +264,7 @@ def course_summary(fm, body, c):
     sem = "year-long" if s in ("0", "", None) else f"semester {s}"
     cr = get(fm, "credits")
     ects = f", {float(cr):g} ECTS" if cr and float(cr) else ""
-    head = f"IE course, Year {y}, {sem}{ects}, {st}"
+    head = f"{UNI + ' course' if UNI else 'Course'}, Year {y}, {sem}{ects}, {st}"
     old = get(fm, "summary") or ""
     if "Study notes:" in old:
         return f"{head}. {old[old.index('Study notes:'):]}"
@@ -322,11 +321,11 @@ def new_course(c, info):
     semdir = {1: "1st Semester", 2: "2nd Semester"}.get(sem, "")
     src = ONEDRIVE / f"Year {year}" / semdir / name
     sem_txt = f"semester {sem}" if sem else "year-long"
-    text = (f"---\ntype: course\nsummary: \"\"\nsummary_by: claude\nuniversity: IE University\nyear: {year}\n"
+    text = (f"---\ntype: course\nsummary: \"\"\nsummary_by: claude\nuniversity: {UNIVERSITY}\nyear: {year}\n"
             f"semester: {sem}\nstatus: {course_status(c, info)}\nbb_course_id: {c['course_id']}\nbb_term: {c['term']}\n"
             f"source: {'~/' + str(src.relative_to(Path.home())) if src.is_dir() else ''}\nrelated: []\n"
             f"updated: {TODAY.isoformat()}\n---\n\n# {name}\n\n"
-            f"IE University, Year {year}, {sem_txt}. Deadlines and scores live in BB Tracker, not here.\n\n"
+            f"{UNIVERSITY + ', ' if UNIVERSITY else ''}Year {year}, {sem_txt}. Deadlines and scores live in BB Tracker, not here.\n\n"
             f"Up: [[Year {year}]] · [[University]]\n\n## Notes\n{STUB}\n")
     changes.append(f"02 University/Courses/{path.name}: new course note")
     if DRY:
@@ -372,7 +371,7 @@ def sync_year_indexes():
 
 
 def create_year(p, y):
-    text = (f"---\ntype: moc\nsummary: \"IE Year {y}: courses with status, ECTS and whether they have study notes.\"\n"
+    text = (f"---\ntype: moc\nsummary: \"{UNI + ' ' if UNI else ''}Year {y}: courses with status, ECTS and whether they have study notes.\"\n"
             f"summary_by: claude\nyear: {y}\nupdated: {TODAY.isoformat()}\n---\n\n# Year {y}\n\n"
             f"Course lines are kept by `vault_sync.py` from BB Tracker. Deadlines: [[BB Tracker]].\n\n"
             f"## Semester 1\n\n## Semester 2\n\n## Year-long\n\nUp: [[University]]\n")

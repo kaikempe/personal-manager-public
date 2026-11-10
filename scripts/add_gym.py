@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Keep the gym sessions in the Apple Calendar "Private" calendar in sync with the class timetable.
+"""Keep the gym sessions in the writable Apple Calendar (PM_WRITE_CALENDAR) in sync with the class timetable.
 
     python3 scripts/add_gym.py            # dry run: print the plan and what would change
     python3 scripts/add_gym.py --write    # apply it
 
-Rules (items.json, gym-weekly):
-  - Normal week: Mon, Tue, Thu, Fri, each starting 10 min after the last class that day, 1.5h.
-  - Monday off (no class Monday): the first two class days Tue-Thu get Day 1 and Day 2, the third
-    rests. Fri stays legs.
+Rules (items.json gym-weekly holds the data; classes are the events in PM_CLASS_CALENDARS):
+  - Sessions in order: Day 1 chest/biceps (usually Mon), Day 2 back/triceps (Tue), Day 3 arms/shoulders (Thu), Day 4 legs (Fri).
+  - Only on a day with an in-person class, starting 10 min after the last such class, 1.5h. Online sessions
+    (titles matching PM_CLASS_SKIP) and asynchronous ones do not count as "last class".
+  - A session whose usual day has no class moves to the next class day after the previous session; legs stays Friday.
+  - Never more than 2 gym days in a row; from a longer run the lowest priority is dropped (Day 3, then 2, then 1).
+  - Nothing special per weekday: with Monday off this gives Tue Day 1, Wed Day 2, Fri legs.
   - A week with no class at all (holidays): no gym.
-  - Spanish and asynchronous sessions do not count as "last class".
 
 Never deletes. Events this script made carry a marker in their notes; when the plan changes, such
 an event is moved or renamed to the new slot instead. Nothing else in the calendar is touched. An
@@ -22,8 +24,15 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-CALENDAR = "Private"
+import pm_env
+
+ROOT = pm_env.DATA
+CALENDAR = pm_env.WRITE_CALENDAR
+# PM_CLASS_CALENDARS: the official class feed first, then (optional) the calendar you actually see, which wins when
+# the two disagree. PM_CLASS_TITLE: regex a class title matches (default: every event in those calendars).
+FEED, VISIBLE = (pm_env.CLASS_CALENDARS + ["", ""])[:2]
+CLASS_TITLE = re.compile(pm_env.get("PM_CLASS_TITLE", "."), re.I)
+CLASS_SKIP = re.compile(pm_env.get("PM_CLASS_SKIP"), re.I) if pm_env.get("PM_CLASS_SKIP") else None
 WEEKS = 4
 DURATION = timedelta(minutes=90)
 GAP = timedelta(minutes=10)
@@ -41,12 +50,25 @@ FIRST_DAY = ""
 def class_ends():
     cal = json.loads((ROOT / "data/calendar.json").read_text())
     ends = {}
+    # A school feed can keep a moved session at its old slot too (seen once: one session listed on Tue AND Wed; the
+    # visible calendar had only Tue). When VISIBLE has the same course and session on another day, the FEED copy is
+    # stale and ignored.
+    def session(title):
+        m = re.match(r"\s*(.+?)\s*\(Ses\.\s*(\d+)", title, re.I)
+        return m and (re.sub(r"\s+", " ", m.group(1)).upper(), m.group(2))
+    visible = {}
     for e in cal["events"]:
-        if e["all_day"] or e["calendar"] not in ("IE University", "Calendar"):
+        if VISIBLE and e["calendar"] == VISIBLE and not e["all_day"] and session(e["title"]):
+            visible.setdefault(session(e["title"]), set()).add(e["start"][:10])
+    for e in cal["events"]:
+        if e["all_day"] or e["calendar"] not in pm_env.CLASS_CALENDARS:
             continue
-        if not re.search(r"\(Ses|\s-\s\d+-\d+", e["title"], re.I):
+        if not CLASS_TITLE.search(e["title"]):
             continue
-        if re.search(r"espa[nñ]ol", e["title"], re.I):
+        key = session(e["title"])
+        if e["calendar"] == FEED and key in visible and e["start"][:10] not in visible[key]:
+            continue
+        if CLASS_SKIP and CLASS_SKIP.search(e["title"]):
             continue
         start, end = (datetime.fromisoformat(e[k]).replace(tzinfo=None) for k in ("start", "end"))
         # Asynchronous sessions are exported as whole-day events; they are not a class to wait for.
@@ -56,13 +78,16 @@ def class_ends():
         ends[day] = max(ends.get(day, end), end)
     last_day = max((e["start"][:10] for e in cal["events"] if not e["all_day"]), default="")
     global FIRST_DAY
-    FIRST_DAY = min((e["start"][:10] for e in cal["events"] if not e["all_day"]), default="")
+    # The export's own window start, not its first event: on 2026-11-09 (Mon, no class, first event Tue) the first-event
+    # date made Monday "before the export, assume class", which put Day 1 on Monday and shifted the whole week.
+    FIRST_DAY = (cal.get("window") or {}).get("from", "")[:10] or \
+        min((e["start"][:10] for e in cal["events"] if not e["all_day"]), default="")
     return ends, cal["generated_at"], last_day
 
 
 def plan():
     g = gym_item()
-    days, split, off_rule = g["recurrence"]["days"], g["details"]["split"], g["details"]["monday_off"]
+    days, split = g["recurrence"]["days"], g["details"]["split"]
     ends, generated, last_day = class_ends()
     today = date.today()
     out, notes = [], []
@@ -78,20 +103,42 @@ def plan():
         if not any(d.isoformat() in ends for d in week):
             notes.append(f"week of {monday}: no class, no gym")
             continue
-        # The export starts mid-week: Monday is not in it, which says nothing about class, so a week that began
-        # before the export keeps the standard pattern instead of the Monday-off shift (which would re-number Thu).
-        monday_off = monday.isoformat() not in ends and monday.isoformat() >= FIRST_DAY
-        chosen = {}  # date -> split key
-        if not monday_off:
-            for d in week:
-                if d.strftime("%a") in days:
-                    chosen[d] = d.strftime("%a")
-        else:
-            notes.append(f"week of {monday}: Monday off")
-            mid = [d for d in week[1:4] if d.isoformat() in ends][:2]
-            chosen.update(zip(mid, off_rule["sessions"]))
-            if week[4].isoformat() in ends:
-                chosen[week[4]] = "Fri"
+        # No special cases per weekday: the plan follows from the rules above. Sessions go in order (Day 1, 2, 3, legs), each on its
+        # usual weekday, only on a day with an in-person class. A session whose day has no class moves to the next class day
+        # after the previous session; legs stays on its day (Friday). Then no more than 2 gym days in a row: from a run of 3+,
+        # the lowest-priority session is dropped (priority: legs, Day 1, Day 2, Day 3). Monday off therefore comes out as
+        # Tue Day 1, Wed Day 2, Fri legs. A day before the export starts is assumed to have class (it says nothing about it).
+        wd = {d.strftime("%a"): d for d in week}
+        has_class = lambda d: d.isoformat() in ends or d.isoformat() < FIRST_DAY
+        last = days[-1]
+        chosen, prev = {}, None  # date -> split key
+        for k in days:
+            pref = wd[k]
+            if k == last:
+                d = pref if has_class(pref) else None
+            elif has_class(pref) and (prev is None or pref > prev):
+                d = pref
+            else:
+                d = next((x for x in week if has_class(x) and (prev is None or x > prev) and x < wd[last]), None)
+            if d:
+                chosen[d] = k
+                prev = d
+            else:
+                notes.append(f"week of {monday}: {split[k]} has no class day, skipped")
+        drop_order = days[:-1][::-1]  # Day 3 first, then Day 2, then Day 1; legs is never dropped
+        while True:
+            ds, runs, cur = sorted(chosen), [], []
+            for d in ds:
+                cur = cur + [d] if cur and d - cur[-1] == timedelta(days=1) else [d]
+                if len(cur) > 2:
+                    runs.append(list(cur))
+            if not runs:
+                break
+            victim = next((d for k in drop_order for d in runs[0] if chosen[d] == k), None)
+            if victim is None:
+                break
+            notes.append(f"{victim:%a %d %b}: {split[chosen[victim]]} dropped (max 2 gym days in a row)")
+            del chosen[victim]
         for d, key in sorted(chosen.items()):
             if d < today:
                 continue
@@ -107,7 +154,7 @@ def plan():
 
 # ---------- AppleScript ----------
 def osa(script):
-    res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=120)
+    res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=600)
     if res.returncode:
         sys.exit(res.stderr.strip())
     return res.stdout

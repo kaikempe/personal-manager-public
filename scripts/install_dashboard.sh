@@ -6,7 +6,7 @@
 #   ./scripts/install_dashboard.sh --remove   stop and remove both
 set -euo pipefail
 
-LABEL="com.personal-manager.dashboard"
+LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).dashboard"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/personal-manager-dashboard.log"

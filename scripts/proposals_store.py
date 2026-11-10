@@ -6,11 +6,15 @@ through update(), which holds a file lock and writes atomically.
 import fcntl
 import json
 import os
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PATH = ROOT / "data" / "proposals.json"
-LOCK = ROOT / "data" / ".proposals.lock"
+sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+PATH = pm_env.DATA / "data" / "proposals.json"
+LOCK = pm_env.DATA / "data" / ".proposals.lock"
 
 
 def load():

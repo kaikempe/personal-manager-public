@@ -8,7 +8,7 @@
 # a permission error on the dashboard, allow it in System Settings > Privacy & Security > Automation.
 set -euo pipefail
 
-LABEL="com.personal-manager.mail-suggest"
+LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).mail-suggest"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/mail-suggest.log"

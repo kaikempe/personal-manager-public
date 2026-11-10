@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Dump the next N days of Calendar.app events to calendar.json (read-only).
 
-Reads every calendar Calendar.app shows (iCloud, Exchange/IE Outlook, Google, ...)
-through EventKit. Writes three files into the output directory:
+Sources (PM_CALENDAR_SOURCES in config.env, comma separated):
+  eventkit  every calendar Calendar.app shows (iCloud, Exchange, Google, ...), through EventKit (needs pyobjc)
+  ics       the feeds listed in ics_feeds.txt (Google, Outlook, school timetables), see scripts/ics_source.py
+
+Writes three files into the output directory:
 
   calendar.json       events + generated_at; only replaced on a successful run
   export_status.json  always written: when it ran, ok or not, and why
@@ -27,6 +30,10 @@ import threading
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pm_env  # noqa: E402
+import ics_source  # noqa: E402
 
 SCHEMA = 1
 _NOT_DETERMINED = 0
@@ -122,8 +129,8 @@ def read_eventkit(window_start: datetime, window_end: datetime):
         from EventKit import EKEventStore
         from Foundation import NSDate
     except ImportError as exc:
-        raise ExportError(f"EventKit not importable ({exc}). Use the BB Tracker venv "
-                          "python, or: pip install pyobjc-framework-EventKit") from exc
+        raise ExportError(f"EventKit not importable ({exc}). Use the python from setup.sh (.venv), "
+                          "or: pip install pyobjc-framework-EventKit; or set PM_CALENDAR_SOURCES=ics") from exc
 
     status = EKEventStore.authorizationStatusForEntityType_(0)
     store = EKEventStore.alloc().init()
@@ -165,6 +172,24 @@ def read_eventkit(window_start: datetime, window_end: datetime):
     return raw_events, raw_calendars
 
 
+def read_sources(w_start, w_end):
+    sources = pm_env.get_list("PM_CALENDAR_SOURCES", pm_env.DEFAULTS["PM_CALENDAR_SOURCES"])
+    events, calendars = [], []
+    if "eventkit" in sources:
+        e, c = read_eventkit(w_start, w_end)
+        events, calendars = events + e, calendars + c
+    if "ics" in sources:
+        f = Path(os.path.expanduser(pm_env.setting("PM_ICS_FILE")))
+        feeds = ics_source.read_feeds(f if f.is_absolute() else pm_env.ROOT / f)
+        if not feeds:
+            raise ExportError(f"PM_CALENDAR_SOURCES has ics, but {f} lists no feeds")
+        e, c = ics_source.read_ics(feeds, w_start, w_end)
+        events, calendars = events + e, calendars + c
+    if not {"eventkit", "ics"} & set(sources):
+        raise ExportError(f"PM_CALENDAR_SOURCES={','.join(sources)}: use eventkit, ics or both")
+    return events, calendars
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", type=Path,
@@ -182,7 +207,7 @@ def main(argv=None) -> int:
 
     status_path = args.out / "export_status.json"
     try:
-        raw_events, raw_calendars = read_eventkit(w_start, w_end)
+        raw_events, raw_calendars = read_sources(w_start, w_end)
         payload = build_payload(raw_events, raw_calendars, now, w_start, w_end)
     except Exception as exc:
         msg = str(exc) if isinstance(exc, ExportError) else "".join(

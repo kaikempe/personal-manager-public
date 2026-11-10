@@ -23,12 +23,6 @@ data/gym_proposals.json. A macOS notification is posted when a review is written
 """
 import json
 import os
-import sys as _sys
-from pathlib import Path as _P
-for _d in (_P(__file__).resolve().parent, _P(__file__).resolve().parent.parent / "scripts"):
-    if (_d / "pm_env.py").exists():
-        _sys.path.insert(0, str(_d))
-import pm_env  # noqa: E402,F401  (loads config.env)
 import re
 import subprocess
 import sys
@@ -38,14 +32,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+DATA = pm_env.DATA
+sys.path.insert(0, str(ROOT / "scripts"))
 import gym_export  # noqa: E402
 import gym_load  # noqa: E402
 
 PLAN = ROOT / "gym/plan.json"
-REVIEW = ROOT / "data/gym_review.json"
-PROPOSALS = ROOT / "data/gym_proposals.json"
-STATE = ROOT / "data/gym_review_state.json"
-GYM_MD = Path(os.environ.get("VAULT_DIR") or Path.home() / "Documents/Vault") / "05 Areas/Gym.md"
+REVIEW = DATA / "data/gym_review.json"
+PROPOSALS = DATA / "data/gym_proposals.json"
+STATE = DATA / "data/gym_review_state.json"
+GYM_MD = pm_env.VAULT / "05 Areas/Gym.md"
 CLAUDE = os.environ.get("CLAUDE_BIN") or str(Path.home() / ".local/bin/claude")
 
 
@@ -171,7 +169,7 @@ def review_session(log, s):
 def review_week(log, today):
     monday = today - timedelta(days=today.weekday())
     week = [s for s in log if monday.isoformat() <= s["date"] <= today.isoformat()]
-    cal = read(ROOT / "data/calendar.json", {"events": []})
+    cal = read(DATA / "data/calendar.json", {"events": []})
     sched = sorted({e["start"][:10] for e in cal["events"]
                     if e.get("title", "").startswith("Gym") and monday.isoformat() <= e["start"][:10] <= today.isoformat()})
     logged = {s["date"] for s in week}

@@ -9,7 +9,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LOG = ROOT / "data/gym_log.jsonl"
+sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+LOG = pm_env.DATA / "data/gym_log.jsonl"
 
 
 def load():

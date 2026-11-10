@@ -9,12 +9,7 @@ A session is deleted from the inbox only after its file is written. Token: data/
 import hashlib
 import json
 import os
-import sys as _sys
-from pathlib import Path as _P
-for _d in (_P(__file__).resolve().parent, _P(__file__).resolve().parent.parent / "scripts"):
-    if (_d / "pm_env.py").exists():
-        _sys.path.insert(0, str(_d))
-import pm_env  # noqa: E402,F401  (loads config.env)
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -22,7 +17,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SESSIONS = ROOT / "gym/sessions"
 TOKEN_FILE = ROOT / "data/gym_token"
-SITE = os.environ.get("GYM_SITE_URL") or (ROOT / "data/gym_site").read_text().strip()   # your Netlify site, e.g. https://my-gym-log.netlify.app
+sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+SITE = pm_env.get("GYM_SITE_URL").rstrip("/")   # your Netlify site, e.g. https://my-gym-log.netlify.app (config.env)
 URL = f"{SITE}/api/session"
 PLAN_URL = f"{SITE}/api/plan"
 

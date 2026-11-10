@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create ONE event in the iCloud "Private" calendar, unless it is already in data/calendar.json.
+"""Create ONE event in the writable calendar (PM_WRITE_CALENDAR), unless it is already in data/calendar.json.
 
     python3 scripts/cal_add.py --title "Dinner with Sam" --start 2026-10-30T20:00 [--end ...] [--location ...]
                                [--note ...] [--all-day]
@@ -16,8 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cal_write  # noqa: E402
+import pm_env  # noqa: E402
 
-CAL = Path(__file__).resolve().parent.parent / "data" / "calendar.json"
+CAL = pm_env.DATA / "data" / "calendar.json"
 
 
 def norm(t):

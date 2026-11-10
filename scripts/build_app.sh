@@ -22,7 +22,7 @@ cat > "$APP/Contents/Info.plist" <<PL
 <dict>
   <key>CFBundleName</key><string>Personal Manager</string>
   <key>CFBundleDisplayName</key><string>Personal Manager</string>
-  <key>CFBundleIdentifier</key><string>com.personal-manager.personal-manager</string>
+  <key>CFBundleIdentifier</key><string>$(python3 "$ROOT/scripts/pm_env.py" PM_LABEL_PREFIX).personal-manager</string>
   <key>CFBundleExecutable</key><string>PersonalManager</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>

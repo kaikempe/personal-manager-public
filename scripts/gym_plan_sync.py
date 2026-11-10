@@ -13,13 +13,6 @@ plan.json also carries the next weeks' gym dates from add_gym.plan() so the phon
 day it is training, including the Monday-off weeks.
 """
 import json
-import os
-import sys as _sys
-from pathlib import Path as _P
-for _d in (_P(__file__).resolve().parent, _P(__file__).resolve().parent.parent / "scripts"):
-    if (_d / "pm_env.py").exists():
-        _sys.path.insert(0, str(_d))
-import pm_env  # noqa: E402,F401  (loads config.env)
 import re
 import sys
 from pathlib import Path
@@ -27,7 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 GYM = ROOT / "gym"
-NOTE = Path(os.environ.get("VAULT_DIR") or Path.home() / "Documents/Vault") / "05 Areas/Gym.md"
+sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+NOTE = pm_env.VAULT / "05 Areas/Gym.md"
 
 
 def note_body():

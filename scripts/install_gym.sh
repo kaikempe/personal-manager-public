@@ -10,7 +10,7 @@
 # System Settings > Privacy & Security > Automation.
 set -euo pipefail
 
-LABEL="com.personal-manager.gym"
+LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).gym"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/personal-manager-gym.log"

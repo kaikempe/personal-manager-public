@@ -1,18 +1,25 @@
 {
   "_doc": "Mail that is never looked at for calendar suggestions. A mail is skipped when ANY rule matches. A rule has 'sender' and/or 'subject' (case-insensitive regex); when it has both, both must match. 'sender' is matched against 'Name <address>'. Edit freely; the dashboard's 'Never from this sender' button appends rules here.",
   "rules": [
-    {"name": "GitHub notifications and account mail", "sender": "@github\\.com"},
-    {"name": "Google account notices", "sender": "accounts\\.google\\.com|noreply-accounts@google\\.com|googleone-noreply@google\\.com"},
-    {"name": "Amazon orders and deliveries", "sender": "@amazon\\.(es|de|com)"},
-    {"name": "Anything sent through Blackboard (read from BB Tracker instead)", "sender": "blackboard\\.com"},
-    {"name": "Streaming and shopping promos", "sender": "@members\\.netflix\\.com|@airbnb\\.com|uber_at_uber|ebay|@chess\\.com|@mail\\.investopedia\\.com|Investopedia@|postmaster@mail\\.invest"},
-    {"name": "AI and service marketing", "sender": "@email\\.openai\\.com|@revolut\\.com"},
-    {"name": "Job and gig spam", "sender": "@mercor\\.com|upwork_com|@upwork\\.com"},
-    {"name": "Football and fan newsletters", "sender": "news_at_fans_b|bundesliga"},
-    {"name": "Airline loyalty marketing", "sender": "suma@aireuropacoms\\.com"},
-    {"name": "IE newsletters, perks and surveys", "sender": "campus\\.life@ie\\.edu|inspiringbenefits\\.com|ieconnects\\.ie"},
-    {"name": "IE Athletic Center (gym bookings and surveys)", "sender": "servicedesk@ie\\.edu", "subject": "athletic"},
-    {"name": "Google Docs and Sheets share requests", "sender": "\\(via Google (Sheets|Docs|Drive|Slides)\\)"},
-    {"name": "Promo wording", "subject": "newsletter|\\d+ ?% off|€ ?\\d+ off|\\bdiscount|\\bsale\\b|urgently hiring"}
+    {
+      "name": "GitHub notifications and account mail",
+      "sender": "@github\\.com"
+    },
+    {
+      "name": "Google account notices",
+      "sender": "accounts\\.google\\.com|noreply-accounts@google\\.com"
+    },
+    {
+      "name": "Shop orders and deliveries",
+      "sender": "@amazon\\.|ebay"
+    },
+    {
+      "name": "Streaming and shopping promos",
+      "sender": "@members\\.netflix\\.com|uber_at_uber"
+    },
+    {
+      "name": "Newsletters by subject",
+      "subject": "newsletter|unsubscribe|weekly digest"
+    }
   ]
 }
