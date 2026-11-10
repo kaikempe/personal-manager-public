@@ -9,6 +9,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -27,16 +28,19 @@ class DashboardSecurity(unittest.TestCase):
     def setUpClass(cls):
         cls.port = free_port()
         env = {**os.environ, "PM_PORT": str(cls.port)}
+        cls.err = tempfile.TemporaryFile()
         cls.proc = subprocess.Popen([sys.executable, str(ROOT / "dashboard/server.py")], env=env,
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(50):
+                                    stdout=subprocess.DEVNULL, stderr=cls.err)
+        deadline = time.time() + 20          # cold CI machines start slowly
+        while time.time() < deadline and cls.proc.poll() is None:
             try:
                 socket.create_connection(("127.0.0.1", cls.port), timeout=0.2).close()
                 return
             except OSError:
                 time.sleep(0.1)
         cls.proc.kill()
-        raise RuntimeError("dashboard did not start")
+        cls.err.seek(0)
+        raise RuntimeError("dashboard did not start (exit %s):\n%s" % (cls.proc.poll(), cls.err.read().decode()[-2000:]))
 
     @classmethod
     def tearDownClass(cls):

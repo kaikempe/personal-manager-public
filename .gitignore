@@ -1,15 +1,20 @@
-data/
-*.log
-.DS_Store
-__pycache__/
-inbox
-/gym
-.netlify/
-node_modules/
+# Your own data and settings: never committed
 /state.md
 /items.json
 /registry/
 /cv/
-config.env
-.venv/
 /CLAUDE.md
+/config.env
+/config/
+/ics_feeds.txt
+data/
+inbox
+/gym
+
+# Tooling
+*.log
+.DS_Store
+__pycache__/
+.venv/
+.netlify/
+node_modules/

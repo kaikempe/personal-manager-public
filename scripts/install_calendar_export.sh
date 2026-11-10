@@ -2,28 +2,37 @@
 # Installs the calendar export as a LaunchAgent that runs every 15 minutes.
 #
 #   ./install_calendar_export.sh OUT_DIR [PYTHON]
+#   ./install_calendar_export.sh --remove
 #
-# OUT_DIR  where calendar.json goes. For Claude to read it from any session, use a
-#          folder inside Google Drive for desktop (My Drive/...).
-# PYTHON   interpreter with pyobjc-framework-EventKit. Default: the BB Tracker venv.
+# OUT_DIR  where calendar.json goes (normally the repo's data/ folder).
+# PYTHON   interpreter for the job. With the eventkit source it needs pyobjc-framework-EventKit
+#          (setup.sh makes .venv); ics alone needs nothing. Default: REMINDERS_PY from config.env, else python3.
+# The job runs export_calendar.py in place, so it always uses this repo's code and config.env.
 set -euo pipefail
 
-OUT="${1:?usage: install_calendar_export.sh OUT_DIR [PYTHON]}"
-PY="${2:-$(command -v python3)}"
-LABEL="com.personal-manager.calendar-export"
+if [ "${1:-}" = "--remove" ]; then
+  LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).calendar-export"
+  launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/$LABEL.plist"
+  echo "removed $LABEL"
+  exit 0
+fi
+OUT="${1:?usage: install_calendar_export.sh OUT_DIR [PYTHON] | --remove}"
+PY="${2:-$(python3 "$(dirname "$0")/pm_env.py" REMINDERS_PY)}"; PY="${PY:-$(command -v python3)}"
+LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).calendar-export"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-DEST="$HOME/.local/share/calendar-export"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/calendar-export.log"
 
 [ -x "$PY" ] || { echo "python not found: $PY" >&2; exit 1; }
-"$PY" -c "import EventKit" 2>/dev/null || { echo "$PY cannot import EventKit" >&2; exit 1; }
+if [[ "$(python3 "$HERE/pm_env.py" PM_CALENDAR_SOURCES)" == *eventkit* ]]; then
+  "$PY" -c "import EventKit" 2>/dev/null || { echo "$PY cannot import EventKit (pip install pyobjc-framework-EventKit, or use the ics source)" >&2; exit 1; }
+fi
 
-mkdir -p "$DEST" "$OUT" "$HOME/Library/LaunchAgents"
-cp "$HERE/export_calendar.py" "$DEST/export_calendar.py"
+mkdir -p "$OUT" "$HOME/Library/LaunchAgents"
 
-echo "Step 1: permission check. Click Allow if macOS asks."
-"$PY" "$DEST/export_calendar.py" --check
+echo "Step 1: check the sources. Click Allow if macOS asks for Calendar access."
+"$PY" "$HERE/export_calendar.py" --check
 
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -34,7 +43,7 @@ cat > "$PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>$PY</string>
-    <string>$DEST/export_calendar.py</string>
+    <string>$HERE/export_calendar.py</string>
     <string>--out</string><string>$OUT</string>
   </array>
   <key>RunAtLoad</key><true/>
@@ -64,4 +73,4 @@ echo "Step 2: waiting for the background job's first run..."
 sleep 8
 cat "$OUT/export_status.json" 2>/dev/null || echo "no export_status.json yet; see $LOG"
 echo
-echo "Uninstall: launchctl bootout gui/\$UID/$LABEL && rm \"$PLIST\""
+echo "Uninstall: $0 --remove"

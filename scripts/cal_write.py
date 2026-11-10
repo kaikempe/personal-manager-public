@@ -1,24 +1,27 @@
 """Writes to Apple Calendar through AppleScript: create, enrich, and delete (delete only on the user's explicit
-accept, one event in "Private").
+accept, one event in the writable calendar, PM_WRITE_CALENDAR).
 
-Used for suggestions and chat actions the user accepted. Event text can come from an email, so every
+Used for suggestions and chat actions the user accepted. In demo mode (PM_DEMO=1) nothing is written. Event text can come from an email, so every
 string is stripped of control characters and escaped before it goes into a script.
 """
 import re
 import subprocess
 from datetime import datetime, timedelta
 
-CALENDAR = "Private"
+import pm_env
+
+CALENDAR = pm_env.WRITE_CALENDAR
 MARKER = "Added from mail by personal-manager"
 
 
-# IE Athletic Center slot bookings (the 1h "GYM ... Sport zones/IE Tower" entries) never go into the calendar:
-# the real gym session is the "Gym · Day N" event from add_gym.py. Checked here so every writer is covered.
-NEVER_ADD = re.compile(r"athletic|sport zones|IE Tower/Room|^\s*GYM\s+(mon|tues?|wednes|thurs?|fri|satur|sun)day", re.I)
+# Events that must never go into the calendar (PM_NEVER_ADD regex on "title | location"), e.g. a booking system's
+# slots when another event already stands for the visit. Checked here so every writer is covered; the dashboard
+# also hides matching events that already sit in a synced calendar.
+NEVER_ADD = re.compile(pm_env.get("PM_NEVER_ADD"), re.I) if pm_env.get("PM_NEVER_ADD") else None
 
 
 def blocked(ev):
-    return bool(NEVER_ADD.search(f'{ev.get("title", "")} | {ev.get("location", "")}'))
+    return bool(NEVER_ADD and NEVER_ADD.search(f'{ev.get("title", "")} | {ev.get("location", "")}'))
 
 
 def q(s):
@@ -28,6 +31,8 @@ def q(s):
 
 
 def osa(script):
+    if pm_env.DEMO:
+        raise RuntimeError("demo mode: the calendar is not changed")
     res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=60)
     if res.returncode:
         raise RuntimeError(res.stderr.strip()[:300] or "osascript failed")
@@ -46,12 +51,14 @@ def parse(s):
 def create(ev, calendar=CALENDAR, note=""):
     """ev: title, start, end (optional), all_day, location. Returns the new event's uid."""
     if blocked(ev):
-        raise RuntimeError("refused: IE Athletic Center bookings are never added to the calendar")
+        raise RuntimeError("refused: matches PM_NEVER_ADD, so it is never added to the calendar")
     start = parse(ev["start"])
     all_day = bool(ev.get("all_day"))
     if all_day:
         start = start.replace(hour=0, minute=0)
-        end = start + timedelta(days=1)
+        # A one-day all-day event ends on its own day. An end at the next midnight made Calendar show it on two days
+        # (seen 2026-11-10: an "Online day" for Wednesday also covered Thursday). A given end date is the last day.
+        end = max(parse(ev["end"]).replace(hour=0, minute=0), start) if ev.get("end") else start
     else:
         end = parse(ev["end"]) if ev.get("end") else start + timedelta(hours=1)
         if end <= start:
@@ -70,7 +77,7 @@ end tell''')
 
 
 def delete(existing, calendar=CALENDAR):
-    """Delete ONE event from the Private calendar, matched by title and start. Only called after the user's
+    """Delete ONE event from the writable calendar, matched by title and start. Only called after the user's
     explicit accept on the dashboard (see server.act_chat). Refuses unless exactly one event matches."""
     start = parse(existing["start"])
     return osa(f'''tell application "Calendar"

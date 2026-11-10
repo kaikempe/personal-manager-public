@@ -11,7 +11,7 @@
 # for the process that runs it: System Settings > Privacy & Security > Automation.
 set -euo pipefail
 
-LABEL="com.personal-manager.inbox"
+LABEL="$(python3 "$(dirname "$0")/pm_env.py" PM_LABEL_PREFIX).inbox"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/personal-manager-inbox.log"

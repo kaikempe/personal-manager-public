@@ -23,12 +23,6 @@ data/gym_proposals.json. A macOS notification is posted when a review is written
 """
 import json
 import os
-import sys as _sys
-from pathlib import Path as _P
-for _d in (_P(__file__).resolve().parent, _P(__file__).resolve().parent.parent / "scripts"):
-    if (_d / "pm_env.py").exists():
-        _sys.path.insert(0, str(_d))
-import pm_env  # noqa: E402,F401  (loads config.env)
 import re
 import subprocess
 import sys
@@ -38,14 +32,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
+import pm_env  # noqa: E402
+
+DATA = pm_env.DATA
+sys.path.insert(0, str(ROOT / "scripts"))
 import gym_export  # noqa: E402
 import gym_load  # noqa: E402
 
 PLAN = ROOT / "gym/plan.json"
-REVIEW = ROOT / "data/gym_review.json"
-PROPOSALS = ROOT / "data/gym_proposals.json"
-STATE = ROOT / "data/gym_review_state.json"
-GYM_MD = Path(os.environ.get("VAULT_DIR") or Path.home() / "Documents/Vault") / "05 Areas/Gym.md"
+REVIEW = DATA / "data/gym_review.json"
+PROPOSALS = DATA / "data/gym_proposals.json"
+STATE = DATA / "data/gym_review_state.json"
+GYM_MD = pm_env.VAULT / "05 Areas/Gym.md"
 CLAUDE = os.environ.get("CLAUDE_BIN") or str(Path.home() / ".local/bin/claude")
 
 
@@ -171,7 +169,7 @@ def review_session(log, s):
 def review_week(log, today):
     monday = today - timedelta(days=today.weekday())
     week = [s for s in log if monday.isoformat() <= s["date"] <= today.isoformat()]
-    cal = read(ROOT / "data/calendar.json", {"events": []})
+    cal = read(DATA / "data/calendar.json", {"events": []})
     sched = sorted({e["start"][:10] for e in cal["events"]
                     if e.get("title", "").startswith("Gym") and monday.isoformat() <= e["start"][:10] <= today.isoformat()})
     logged = {s["date"] for s in week}
@@ -228,8 +226,9 @@ def reword(r, text, use_llm):
 
 
 def notify(title, text):
-    first = text.splitlines()[0] if text else ""
-    subprocess.run(["osascript", "-e", f'display notification {json.dumps(first)} with title {json.dumps(title)}'], capture_output=True)
+    # Mac only: the phone shows the review inside the gym app (plan.json carries it).
+    import notify as _n
+    _n.send(text.splitlines()[0] if text else "", title=title)
 
 
 def store_proposals(day_props, session_id):
@@ -243,6 +242,25 @@ def store_proposals(day_props, session_id):
         keep.append({"id": re.sub(r"\W+", "-", f'{n["day"]}-{n["exercise"]}-{n["to"]}').strip("-").lower(), **n,
                      "session": session_id, "status": "pending", "created": datetime.now().isoformat(timespec="seconds")})
     write(PROPOSALS, {"proposals": keep})
+
+
+def supersede_stale(plan=None):
+    """Close pending proposals the plan has overtaken: "14 → 16 kg" means nothing once the note says 18 kg
+    (seen 2026-11-10: such a proposal was still offered a week after the weight had been raised by hand).
+    Returns the ids closed. The row is kept with status "superseded"."""
+    plan = plan or read(PLAN, {})
+    now = {(d, e["name"]): e.get("weight") for d, v in (plan.get("days") or {}).items() for e in v.get("exercises", [])}
+    data = read(PROPOSALS, {"proposals": []})
+    closed = []
+    for p in data["proposals"]:
+        w = now.get((p.get("day"), p.get("exercise")))
+        if p.get("status") == "pending" and w is not None and float(w) != float(p["from"]):
+            p["status"], p["handled"] = "superseded", datetime.now().isoformat(timespec="seconds")
+            p["note"] = f"plan already at {fmt(float(w))} kg"
+            closed.append(p["id"])
+    if closed:
+        write(PROPOSALS, data)
+    return closed
 
 
 # ---------- accept / dismiss ----------

@@ -1,0 +1,11 @@
+# Calendar feeds for the "ics" source. Copy to ics_feeds.txt (gitignored) and set PM_CALENDAR_SOURCES=ics
+# (or eventkit,ics) in config.env. One feed per line:  Name | URL or file path
+# A secret iCal link works like a password: never commit it.
+#
+# Google Calendar: Settings > your calendar > "Secret address in iCal format"
+# Outlook / Office 365: Settings > Calendar > Shared calendars > Publish a calendar > ICS link
+# iCloud: Calendar app > share calendar > Public Calendar > copy link (webcal:// is fine)
+#
+# Work      | https://outlook.office365.com/owa/calendar/XXXX/YYYY/calendar.ics
+# Personal  | https://calendar.google.com/calendar/ical/XXXX/private-YYYY/basic.ics
+# Timetable | ~/Downloads/timetable.ics

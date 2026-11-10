@@ -12,19 +12,15 @@ The unified `inbox` is NOT used: it missed the iCloud account.
 """
 import argparse
 import subprocess
-import os
-import sys as _sys
-from pathlib import Path as _P
-for _d in (_P(__file__).resolve().parent, _P(__file__).resolve().parent.parent / "scripts"):
-    if (_d / "pm_env.py").exists():
-        _sys.path.insert(0, str(_d))
-import pm_env  # noqa: E402,F401  (loads config.env)
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pm_env
+
 ROOT = Path(__file__).resolve().parent.parent
-ACCOUNTS = [a.strip() for a in os.environ.get("MAIL_ACCOUNTS", "iCloud").split(",") if a.strip()]   # Mail.app account names, comma separated
+# MAIL_SCAN_ACCOUNTS in config.env (Mail.app account names), else the suggestion accounts
+ACCOUNTS = pm_env.get_list("MAIL_SCAN_ACCOUNTS") or pm_env.get_list("MAIL_ACCOUNTS", pm_env.DEFAULTS["MAIL_ACCOUNTS"])
 
 SCRIPT = '''
 with timeout of 90 seconds
