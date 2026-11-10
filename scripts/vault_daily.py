@@ -28,8 +28,8 @@ GIT = "/usr/bin/git"
 
 
 def notify(title, text):
-    script = f"display notification {text!r} with title {title!r}".replace("'", '"')
-    subprocess.run(["/usr/bin/osascript", "-e", script], capture_output=True)
+    import notify as _n
+    _n.send(f"{title}: {text}", phone=True, key=f"vault:{title}:{__import__('datetime').date.today()}")
 
 
 def run(cmd):

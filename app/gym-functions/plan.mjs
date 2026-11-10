@@ -1,6 +1,7 @@
 // The plan and exercise history the phone app shows. The Mac (scripts/gym_pull.py) PUTs them whenever they change;
 // the app GETs them on open. PUT and the history need the Bearer token (same as /api/session); the plan alone is
 // public so the app works even before the key is entered (exercise names, weights and the gym dates, nothing else).
+// `notes` (the last review and the open weight proposals) is private like the history.
 import { getStore } from "@netlify/blobs";
 import { timingSafeEqual } from "node:crypto";
 
@@ -27,7 +28,8 @@ export default async (req) => {
     let d;
     try { d = JSON.parse(text); } catch { return json({ error: "not JSON" }, 400); }
     if (!d || typeof d.plan !== "object" || !d.plan.days) return json({ error: "bad plan" }, 400);
-    await store.setJSON("current", { plan: d.plan, history: d.history || {} });
+    const notes = d.notes && typeof d.notes === "object" ? d.notes : {};
+    await store.setJSON("current", { plan: d.plan, history: d.history || {}, notes });
     return json({ ok: true });
   }
   return json({ error: "method not allowed" }, 405);

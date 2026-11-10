@@ -73,7 +73,8 @@ def collect():
     try:
         for r in json.loads(rem_io("list")):
             if r["id"].strip():
-                items.append({"kind": "reminder", "key": r["id"].strip(), "text": r["title"].strip(), "note": r["notes"].strip()})
+                items.append({"kind": "reminder", "key": r["id"].strip(), "text": r["title"].strip(), "note": r["notes"].strip(),
+                              "created": r.get("created") or ""})
     except (RuntimeError, ValueError, subprocess.TimeoutExpired) as e:
         err = f"Reminders: {e}"
     if INBOX.exists():
@@ -81,6 +82,54 @@ def collect():
             if f.is_file() and not f.name.startswith("."):
                 items.append({"kind": "file", "key": f.name, "text": f.name, "note": ""})
     return items, err
+
+
+def plugin_commands(items, hooks=None, tick=None):
+    """Inbox lines that a plugin handles in code (plugins/README.md: INBOX(text, created) -> message or None), e.g. a
+    phone command the shortcut filed here because the Mac could not be reached. No model reads these.
+
+    Returns (items left for the normal processing, results). A command has a side effect, so its reminder is ticked
+    BEFORE the plugin runs: a crash halfway must never run it a second time. If the tick fails, nothing runs."""
+    if hooks is None:
+        try:
+            import plugins_load
+            hooks = plugins_load.each("INBOX")
+        except Exception as e:  # noqa: BLE001
+            print(f"plugins not loaded: {e}", file=sys.stderr)
+            hooks = []
+    tick = tick or tick_reminder
+    rest, results = [], []
+    for it in items:
+        if it["kind"] != "reminder" or not hooks:
+            rest.append(it)
+            continue
+        try:
+            created = datetime.fromisoformat(it["created"]).replace(tzinfo=None) if it.get("created") else None
+        except ValueError:
+            created = None
+        claimed = None
+        for mod, fn in hooks:
+            # A dry call decides who owns the line; plugins expose that as INBOX_LINE (a regex) so nothing runs yet.
+            pat = getattr(mod, "INBOX_LINE", None)
+            if pat is not None and pat.match(it["text"]):
+                claimed = fn
+                break
+        if claimed is None:
+            rest.append(it)
+            continue
+        try:
+            tick(it["key"])
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            results.append({"item": it["text"], "kind": "reminder", "summary": f"not run: could not tick the reminder ({e})",
+                            "did": [], "needs_user": "Tick it off by hand, then say the command again."})
+            continue
+        try:
+            said = claimed(it["text"], created) or "done"
+        except Exception as e:  # noqa: BLE001
+            said = f"Not done: {e}"
+        results.append({"item": it["text"], "kind": "reminder", "summary": str(said)[:300], "did": ["ran the command"],
+                        "needs_user": str(said)[:400] if str(said).lower().startswith(("not ", "could not", "no ")) else None})
+    return rest, results
 
 
 def prompt_for(items):
@@ -152,12 +201,9 @@ def archive(name):
     shutil.move(str(INBOX / name), str(dst))
 
 
-def notify(title, text):
-    esc = lambda s: s.replace("\\", "\\\\").replace('"', "'")[:180]  # noqa: E731
-    try:
-        osa(f'display notification "{esc(text)}" with title "{esc(title)}"')
-    except (RuntimeError, subprocess.TimeoutExpired):
-        pass
+def notify(title, text, phone=False):
+    import notify as _n
+    _n.send(text, title=title, phone=phone)
 
 
 def main():
@@ -176,6 +222,16 @@ def main():
     items = [it for it in items if state["attempts"].get(f'{it["kind"]}:{it["key"]}', 0) < MAX_ATTEMPTS]
     if err:
         print(err, file=sys.stderr)
+    commands = []
+    if items and not args.dry_run:
+        items, commands = plugin_commands(items)
+        if commands:
+            log = read_json(LOG, {"entries": []})
+            log["entries"] = ([{"at": datetime.now().astimezone().isoformat(timespec="seconds"), "results": commands,
+                                "error": None}] + log["entries"])[:50]
+            LOG.write_text(json.dumps(log, indent=1, ensure_ascii=False))
+            for r in commands:   # the command came from the phone, so the answer goes back there
+                notify("Inbox command", r["summary"], phone=True)
     if not items:
         return 0
     prompt = prompt_for(items)
@@ -221,7 +277,10 @@ def main():
 
     asks = [r for r in entry["results"] if r["needs_user"]]
     if handled:
+        # Something that needs the user goes to the phone too: that is where the capture came from.
         notify("Inbox processed", f"{handled} item{'s' if handled != 1 else ''} filed" + (f", {len(asks)} need you" if asks else ""))
+        for r in asks:
+            notify("Inbox needs you", f'Inbox: "{r["item"][:60]}" needs you: {r["needs_user"][:140]}', phone=True)
     elif entry["error"]:
         notify("Inbox failed", entry["error"])
     print(json.dumps(entry, indent=1, ensure_ascii=False))

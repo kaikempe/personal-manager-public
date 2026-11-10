@@ -134,6 +134,16 @@ def main():
         gym_plan_sync.main()
     except SystemExit as e:
         print("plan sync:", e)
+    try:  # a weight proposal the plan has overtaken is closed, so neither the dashboard nor the phone offers it
+        import gym_review as _gr
+        _gr.supersede_stale()
+    except Exception as e:  # noqa: BLE001
+        print("stale proposals:", e)
+    try:  # keep the gym events in the calendar on the plan (a moved class, an "Online day")
+        import add_gym
+        add_gym.auto()
+    except (SystemExit, Exception) as e:  # noqa: BLE001
+        print("gym calendar sync:", e)
     try:  # review new sessions (and the week, Sunday evening); never let it break the ingest
         import gym_review
         sys.argv = sys.argv[:1]

@@ -56,7 +56,9 @@ def create(ev, calendar=CALENDAR, note=""):
     all_day = bool(ev.get("all_day"))
     if all_day:
         start = start.replace(hour=0, minute=0)
-        end = start + timedelta(days=1)
+        # A one-day all-day event ends on its own day. An end at the next midnight made Calendar show it on two days
+        # (seen 2026-11-10: an "Online day" for Wednesday also covered Thursday). A given end date is the last day.
+        end = max(parse(ev["end"]).replace(hour=0, minute=0), start) if ev.get("end") else start
     else:
         end = parse(ev["end"]) if ev.get("end") else start + timedelta(hours=1)
         if end <= start:

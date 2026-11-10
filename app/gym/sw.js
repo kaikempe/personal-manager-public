@@ -1,5 +1,5 @@
 // Offline shell: cache the app files, serve them cache-first, refresh in the background.
-const CACHE = "gym-v16";
+const CACHE = "gym-v17";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon.png"];
 
 self.addEventListener("install", e => {

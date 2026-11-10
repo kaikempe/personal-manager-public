@@ -56,6 +56,11 @@ DEFAULTS = {
     "PM_CALENDAR_SOURCES": "eventkit",          # eventkit (Apple Calendar), ics, or eventkit,ics
     "PM_ICS_FILE": "ics_feeds.txt",             # one "Name | URL-or-path" per line, for the ics source
     "GYM_SITE_URL": "",                         # your Netlify site for the gym sync
+    "PM_PHONE_LIST": "",                        # Reminders list for alerts to your phone (scripts/notify.py); empty = Mac only
+    "PM_QUIET_HOURS": "23:00-07:30",            # phone alerts raised in this window ring at its end
+    "PM_PHONE_ALERT_HOURS": "48",               # phone alerts older than this are ticked off
+    "PM_OFF_CAMPUS": r"^\s*(online day|off campus|no campus)\b",   # an event with such a title: no in-person class that day
+    "PM_GYM_AUTOSYNC": "1",                     # 1 = the gym job keeps its own calendar events on the plan (add_gym.py --auto)
     "PM_DEMO": "",                              # 1 = demo data, no calendar writes, no model calls
 }
 

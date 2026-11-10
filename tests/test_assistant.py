@@ -14,6 +14,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
+import os
+os.environ["PM_NO_NOTIFY"] = "1"   # a test must never notify the real user
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "dashboard"))
@@ -164,10 +167,19 @@ class Health(unittest.TestCase):
 
     def test_failed_mail_run_is_an_error(self):
         with tempfile.TemporaryDirectory() as t:
-            Path(t, "mail_status.json").write_text('{"ok": false, "error": "session limit"}')
+            Path(t, "mail_status.json").write_text('{"ok": false, "error": "Mail did not answer"}')
             with mock.patch.object(health, "DATA", Path(t)):
                 rows = {n: (lv, d) for lv, n, d in health.data_checks(datetime.now().astimezone())}
-        self.assertEqual(rows["Mail check"], ("error", "last run failed: session limit"))
+        self.assertEqual(rows["Mail check"], ("error", "last run failed: Mail did not answer"))
+
+    def test_a_usage_limit_pauses_mail_and_is_only_a_warning(self):
+        # The model's limit is not a fault: unseen mails are retried every hour. As an error it would also be
+        # pushed to the phone every day the user works a lot.
+        with tempfile.TemporaryDirectory() as t:
+            Path(t, "mail_status.json").write_text(json.dumps({"ok": False, "error": "You've hit your 5-hour limit · resets 9:40am"}))
+            with mock.patch.object(health, "DATA", Path(t)):
+                rows = {n: (lv, d) for lv, n, d in health.data_checks(datetime.now().astimezone())}
+        self.assertEqual(rows["Mail check"][0], "warn")
 
     def test_job_not_loaded_is_an_error(self):
         with tempfile.TemporaryDirectory() as t:

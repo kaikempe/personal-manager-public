@@ -72,8 +72,9 @@ def log(rec):
 
 
 def notify(text):
-    subprocess.run(["osascript", "-e", f"display notification {json.dumps(text)} with title \"Personal manager\""],
-                   capture_output=True)
+    # Results of something asked from the phone go back to the phone (scripts/notify.py), not only to the Mac.
+    import notify as _n
+    _n.send(text, phone=True)
 
 
 def token_ok(header):

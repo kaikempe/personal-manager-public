@@ -5,6 +5,13 @@
 
 gym_ingest.py then validates and logs them as usual (it dedupes by id, so a repeat is harmless).
 A session is deleted from the inbox only after its file is written. Token: data/gym_token (not in git).
+
+The same two calls carry the review to the phone and the answer back (since 2026-11-10):
+  push   also sends `notes`: the last session review, the weekly review and the open weight proposals
+         (data/gym_review.json, data/gym_proposals.json), so the app shows them where the training happens.
+  pull   an inbox entry with "kind": "decision" is the user's tap on Accept / Not now for one proposal. It runs
+         gym_review.apply / dismiss, exactly as the dashboard button does (apply still refuses when Gym.md no
+         longer shows the old weight), and is logged to data/gym_decisions.jsonl. It is never written to sessions/.
 """
 import hashlib
 import json
@@ -12,6 +19,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +39,48 @@ def call(method, url, token):
         return json.loads(r.read())
 
 
+def decide(d, review=None, tell=None):
+    """One tap from the phone on a weight proposal. Returns what happened; never raises."""
+    if review is None:
+        import gym_review as review
+    pid, accept = str(d.get("proposal") or ""), d.get("accept") is True
+    try:
+        (review.apply if accept else review.dismiss)(pid)
+        out = "applied" if accept else "dismissed"
+    except ValueError as e:
+        out = f"refused: {e}"
+    try:
+        with (ROOT / "data/gym_decisions.jsonl").open("a") as f:
+            f.write(json.dumps({"at": datetime.now().isoformat(timespec="seconds"), "proposal": pid, "accept": accept,
+                                "result": out}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    if out.startswith("refused") and accept:
+        if tell is None:
+            import notify
+            tell = notify.send
+        tell(f"Gym: the weight change was not applied ({out[9:]}).", phone=True)
+    return out
+
+
+def notes():
+    """What the phone shows next to the plan: the last reviews and the weight proposals still waiting."""
+    def read(name, default):
+        try:
+            return json.loads((ROOT / "data" / name).read_text())
+        except (OSError, ValueError):
+            return default
+    rev = read("gym_review.json", {})
+    out = {"proposals": [{k: p.get(k) for k in ("id", "day", "exercise", "from", "to", "reason")}
+                         for p in read("gym_proposals.json", {"proposals": []}).get("proposals", []) if p.get("status") == "pending"]}
+    s, w = rev.get("session") or {}, rev.get("weekly") or {}
+    if s.get("text"):
+        out["session"] = {"date": s.get("date"), "day": s.get("day"), "text": str(s["text"])[:1500]}
+    if w.get("text"):
+        out["week"] = {"week_of": w.get("week_of"), "text": str(w["text"])[:1500]}
+    return out
+
+
 def pull():
     if not TOKEN_FILE.exists():
         return 0
@@ -38,6 +88,10 @@ def pull():
     SESSIONS.mkdir(parents=True, exist_ok=True)
     n = 0
     for s in call("GET", URL, token)["sessions"]:
+        if s.get("kind") == "decision":
+            print(f'gym proposal {s.get("proposal")}: {decide(s)}')
+            call("DELETE", f"{URL}?id={s['id']}", token)
+            continue
         tmp = SESSIONS / f".{s['id']}.part"
         tmp.write_text(json.dumps(s, indent=2, ensure_ascii=False) + "\n")
         os.replace(tmp, SESSIONS / f"{s['id']}.json")
@@ -54,8 +108,8 @@ def push():
     plan, hist = gym / "plan.json", gym / "history.json"
     if not plan.exists():
         return False
-    body = json.dumps({"plan": json.loads(plan.read_text()), "history": json.loads(hist.read_text()) if hist.exists() else {}},
-                      ensure_ascii=False, sort_keys=True).encode()
+    body = json.dumps({"plan": json.loads(plan.read_text()), "history": json.loads(hist.read_text()) if hist.exists() else {},
+                       "notes": notes()}, ensure_ascii=False, sort_keys=True).encode()
     digest = hashlib.sha256(body).hexdigest()
     stamp = ROOT / "data/.gym_push_hash"
     if stamp.exists() and stamp.read_text().strip() == digest:

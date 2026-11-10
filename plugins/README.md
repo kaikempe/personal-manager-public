@@ -11,6 +11,9 @@ you confirm, extra **chat rules**, and **phone routes**. `_example.py` is a work
 | `CHAT_RULES` | `str` | Extra lines for the chat's system prompt: when to propose your action, and how to fill it |
 | `BROWSER_WORDS` | `str` | Regex fragment. Questions that match it start Chrome first, for the browser tools |
 | `ROUTES` | `dict` | `"/path" -> fn(cmd, phone)` for the phone endpoint (`scripts/phone_server.py`). The request needs the phone token |
+| `CHECKS` | `fn() -> [(level, name, detail)]` | Rows for `scripts/health.py` and the System page. `level` is `ok`, `warn` or `error` |
+| `HOURLY` | `fn()` | Called once an hour by `scripts/state_refresh.py`. For reminders: use `notify.send(text, phone=True, key=...)`, the key keeps it to one alert |
+| `INBOX_LINE`, `INBOX` | regex, `fn(text, created) -> str` | A line in the inbox list that matches `INBOX_LINE` is your command (e.g. filed by a phone shortcut while the Mac was unreachable). It is run in code, before any model, and its reminder is ticked first. Return what happened; start with "Not " when it was refused |
 
 An action spec has these keys:
 
@@ -27,3 +30,7 @@ Rules that keep plugins safe:
 - A plugin that writes to a calendar must use `scripts/cal_write.py`. It writes only to `PM_WRITE_CALENDAR` and refuses duplicates.
 - Plugins run with your user's rights. Read a plugin before you drop it in.
 - Demo mode (`PM_DEMO=1`) turns plugin actions off.
+- `scripts/plugins_load.py` loads plugins for every program. A plugin that fails to import is skipped by the background
+  jobs (and reported); the dashboard refuses to start with it, so you notice.
+- An `INBOX` command may run hours after it was written: resolve "today" and "tomorrow" from `created`, and refuse what
+  is no longer possible instead of doing the next best thing.

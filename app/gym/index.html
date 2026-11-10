@@ -65,7 +65,9 @@ const S = {
   plan: ls.get("plan", null),          // imported from plan.json: {days:{"Day 1":{title,exercises:[]}}, schedule:[]}
   hist: ls.get("hist", {}),            // imported from history.json: name -> [{id,date,skipped,sets}]
   sessions: ls.get("sessions", []),    // finished on this phone (kept for "last time" and re-sending)
-  draft: ls.get("draft", null)         // workout in progress
+  draft: ls.get("draft", null),        // workout in progress
+  notes: ls.get("notes", {}),          // from the Mac: {session:{date,day,text}, week:{text}, proposals:[{id,day,exercise,from,to,reason}]}
+  decisions: ls.get("decisions", [])   // taps on a weight proposal: {id,proposal,accept,sent}; kept so a tap is never asked twice
 };
 let view = S.draft ? "workout" : "home", openEx = null, cur = {}, msg = "", addSel = null, addSets = 3;
 const save = k => ls.set(k, S[k]);
@@ -179,7 +181,43 @@ async function upload(sess) {   // POST to the Netlify inbox; the Mac pulls it f
     sess.sent = true; save("sessions"); msg = "Saved."; return true;
   } catch { msg = "Offline: the workout is kept and will upload when you are back online."; return false; }
 }
-async function uploadPending() { for (const s of S.sessions.filter(x => !x.sent)) if (!(await upload(s))) break; render(); }
+async function uploadPending() { for (const s of S.sessions.filter(x => !x.sent)) if (!(await upload(s))) break; await sendDecisions(); render(); }
+// ---------- review and weight proposals (computed on the Mac; an Accept changes one weight in the plan note there) ----------
+async function sendDecisions() {
+  const token = ls.get("token", null); if (!token) return;
+  for (const d of S.decisions.filter(x => !x.sent)) {
+    try {
+      const r = await fetch("/api/session", { method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ id: d.id, kind: "decision", proposal: d.proposal, accept: d.accept }) });
+      if (!r.ok) break;
+      d.sent = true; save("decisions");
+    } catch { break; }
+  }
+}
+function decide(pid, accept) {
+  const p = ((S.notes || {}).proposals || []).find(x => x.id === pid); if (!p || S.decisions.some(d => d.proposal === pid)) return;
+  S.decisions = [{ id: ("decision-" + pid).slice(0, 60) + "-" + Date.now().toString(36), proposal: pid, accept, sent: false }, ...S.decisions].slice(0, 40);
+  save("decisions");
+  let done = false;
+  if (accept && S.plan && S.plan.days[p.day]) {   // show the new weight at once; the Mac's next plan sync confirms it (or puts the old one back)
+    const e = S.plan.days[p.day].exercises.find(x => x.name === p.exercise);
+    if (e && e.weight === p.from) { e.weight = p.to; save("plan"); done = true; }
+  }
+  msg = !accept ? "Left as it is." : done ? `${p.exercise}: ${fmt(p.to)} kg from now on.` : `${p.exercise}: the plan no longer says ${fmt(p.from)} kg, so nothing changed.`;
+  render(); sendDecisions();
+}
+function notesHtml() {
+  const N = S.notes || {}, open = (N.proposals || []).filter(p => !S.decisions.some(d => d.proposal === p.id));
+  const canTap = !!ls.get("token", null);
+  let h = "";
+  if (open.length) h += `<h2>Suggested weight change${open.length > 1 ? "s" : ""}</h2>` + open.map(p => `<div class="card"><b>${esc(p.exercise)}</b> <span class="dim">${esc(p.day)}</span>
+    <div style="margin:6px 0">${fmt(p.from)} kg → <b>${fmt(p.to)} kg</b> <span class="dim small">(${esc(p.reason || "")})</span></div>
+    ${canTap ? `<div class="row"><button class="pri grow" data-act="propyes" data-id="${esc(p.id)}">Accept</button><button class="ghost grow" data-act="propno" data-id="${esc(p.id)}">Not now</button></div>` : ""}</div>`).join("");
+  const r = N.session;
+  if (r && r.text) h += `<h2>Last workout</h2><div class="card small" style="white-space:pre-line">${esc(r.text)}</div>`;
+  if (N.week && N.week.text) h += `<h2>Week</h2><div class="card small" style="white-space:pre-line">${esc(N.week.text)}</div>`;
+  return h;
+}
 async function send(sess) {   // upload, else share sheet -> "Save to Files" -> Manager Gym/sessions
   if (ls.get("token", null)) { await upload(sess); render(); return; }
   const file = new File([JSON.stringify(sess, null, 2)], `${sess.id}.json`, { type: "application/json" });
@@ -259,6 +297,7 @@ function vHome() {
     : `<div class="card dim">No gym scheduled today.</div>`}
   <h2>${sch ? "Or another day" : "Start a day"}</h2>
   ${days.map(d => `<button class="chip" data-act="start" data-day="${d}">${d}: ${esc(S.plan.days[d].title)}</button>`).join("")}
+  ${notesHtml()}
   ${unsent.length ? `<h2>Waiting to upload</h2>${unsent.map(s => `<div class="card row between"><span>${s.date} ${s.day}</span><button class="sm" data-act="send" data-id="${s.id}">Upload now</button></div>`).join("")}` : ""}
   ${ls.get("token", null) ? `<div class="small dim" style="margin-top:22px">${msg || "Synced with your Mac: plan, history and workouts update by themselves."}</div>`
     : keyBox()}`;
@@ -490,6 +529,8 @@ document.addEventListener("click", ev => {
   else if (a === "finish") { view = "finish"; render(); }
   else if (a === "feel") { S.draft.feel = +t.dataset.v; save("draft"); render(); }
   else if (a === "syncnow") { msg = "Loading…"; render(); syncData(); }
+  else if (a === "propyes") decide(t.dataset.id, true);
+  else if (a === "propno") decide(t.dataset.id, false);
   else if (a === "savekey") {
     const m = ($("#keyin").value || "").trim().match(/([\w-]{20,})\s*$/);
     if (m) { ls.set("token", m[1]); msg = "Key saved."; uploadPending().then(syncData); } else { msg = "That does not look like the key."; }
@@ -547,6 +588,7 @@ async function syncData() {   // plan + history published by the Mac; never swap
     if (d.plan && d.plan.days && !S.draft) {
       S.plan = d.plan; save("plan");
       if (d.history) { S.hist = d.history; save("hist"); }
+      if (d.notes) { S.notes = d.notes; save("notes"); }
       if (view === "home") render();
     }
   } catch { if (!S.plan) { msg = "Could not load the plan. Check your connection and tap Load plan."; if (view === "home") render(); } }

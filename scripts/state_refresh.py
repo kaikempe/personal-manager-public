@@ -20,6 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "dashboard"))
 import server  # noqa: E402  (same data the dashboard shows)
+sys.path.insert(0, str(ROOT / "scripts"))
+import notify  # noqa: E402
 
 START, END = "<!-- auto:start -->", "<!-- auto:end -->"
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -42,6 +44,19 @@ def day_label(d, today):
     return f"{DAYS[dt.weekday()]} {dt.day} {MONTHS[dt.month - 1]}"
 
 
+UNDATED_DAYS = 7   # a task this old without a due date is called out: without a date nothing ever makes it urgent
+
+
+def undated_days(item, today):
+    """Days an open task has existed without a due date, or None (it has a date, waits on someone, or no created date)."""
+    if item.get("due") or item.get("blocked_by") or not item.get("created"):
+        return None
+    try:
+        return (today - datetime.fromisoformat(str(item["created"])[:10]).date()).days
+    except ValueError:
+        return None
+
+
 def build(o):
     now = datetime.fromisoformat(o["now"])
     today = now.date()
@@ -55,7 +70,8 @@ def build(o):
     for d in o["bb"]["deadlines"]:
         day = d["due"][:10]
         if today.isoformat() <= day <= horizon and datetime.fromisoformat(d["due"]) >= now - timedelta(hours=1):
-            by_day.setdefault(day, []).append((d["due"], f"{d['title']} ({nice(d['course'])}) {d['due'][11:16]}"))
+            by_day.setdefault(day, []).append((d["due"], f"{d['title']} ({nice(d['course'])}) {d['due'][11:16]}"
+                                               + (" [date unclear, see below]" if (d.get("flag") or "").startswith("date unclear") else "")))
     for i in o["items"]:
         if i.get("type") == "task" and i.get("status") != "done" and i.get("due") and today.isoformat() <= i["due"][:10] <= horizon:
             by_day.setdefault(i["due"][:10], []).append((i["due"], f"{i['title']} (task)"))
@@ -70,7 +86,8 @@ def build(o):
     rows = [d for d in o["bb"]["deadlines"] if d["due"][:10] <= lim]
     for d in rows:
         loc = f" | {d['location']}" if d.get("location") else ""
-        out.append(f"- {d['due'][:10]} {d['due'][11:16]} | {nice(d['course'])}: {d['title']}{loc}")
+        flag = f" | NOTE: {d['flag']}" if d.get("flag") else ""
+        out.append(f"- {d['due'][:10]} {d['due'][11:16]} | {nice(d['course'])}: {d['title']}{loc}{flag}")
     if not rows:
         out.append("- none")
     tasks = [i for i in o["items"] if i.get("type") == "task" and i.get("status") != "done"]
@@ -78,16 +95,65 @@ def build(o):
     for i in tasks:
         due = f" | due {i['due']}" if i.get("due") else ""
         blk = f" | waiting on {i['blocked_by']}" if i.get("blocked_by") else ""
-        out.append(f"- {i['title']}{due}{blk}")
+        age = undated_days(i, today)
+        old = f" | no date, open {age} days" if age is not None and age >= UNDATED_DAYS else ""
+        out.append(f"- {i['title']}{due}{blk}{old}")
     if not tasks:
         out.append("- none")
     return "\n".join(out)
 
 
+def alerts(o, now, prev_errors=(), send=None):
+    """What the hourly run tells the phone (scripts/notify.py; every key is sent once). Returns the names of the
+    health errors seen now, for the next run.
+
+      - a mail suggestion that is still unanswered and falls due within 48 hours: the Suggestions page is only seen
+        at the Mac, and one due the same day sat there for 12 hours (2026-11-09);
+      - a deadline whose date needs a second look (`flag` starting "date unclear");
+      - a health error that is still there an hour later (one run can catch a Mac that just woke up)."""
+    send = send or notify.send
+    soon = (now + timedelta(hours=48)).isoformat()[:16]
+    for p in o.get("proposals", []):
+        it = p.get("item") or {}
+        when = str(it.get("start") or "")
+        if p.get("status") != "new" or not when or not now.date().isoformat() <= when[:10] or when[:16] > soon:
+            continue
+        day = day_label(when[:10], now.date())
+        what = "Due" if it.get("type") == "task" else "On"
+        send(f'{what} {day.lower() if day in ("Today", "Tomorrow") else day}: {it.get("title")}. '
+             "A suggestion from your mail, waiting on the dashboard.", phone=True, key=f'proposal:{p.get("id")}')
+    for d in o["bb"]["deadlines"]:
+        if (d.get("flag") or "").startswith("date unclear"):
+            send(f'{nice(d["course"])}: {d["title"]}, {d["flag"]}.', phone=True,
+                 key=f'deadline-flag:{d["course"]}:{d["title"]}:{d["due"][:10]}')
+    if now.weekday() == 6 and now.hour >= 17:   # Sunday evening, with the weekly review: tasks that never got a date
+        old = [i["title"] for i in o.get("items", []) if i.get("type") == "task" and i.get("status") not in ("done", "dropped")
+               and (undated_days(i, now.date()) or 0) >= 2 * UNDATED_DAYS]
+        if old:
+            send(f'{len(old)} task{"s" if len(old) != 1 else ""} without a date for two weeks or more: ' + ", ".join(old[:4]) +
+                 ". Give each a day or drop it.", phone=True, key=f"undated:{now.date().isocalendar()[1]}")
+    errors = [r for r in o.get("health", []) if r.get("level") == "error"]
+    for r in errors:
+        if r["name"] in prev_errors:
+            send(f'{r["name"]}: {r["detail"]}', phone=True, key=f'health:{r["name"]}:{now.date()}')
+    return [r["name"] for r in errors]
+
+
+def plugin_hourly():
+    """Plugins with HOURLY(now) get one call per run (plugins/README.md). A failure is printed, never raised."""
+    import plugins_load
+    for mod, fn in plugins_load.each("HOURLY"):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            print(f"{mod.__name__}: hourly hook failed: {e}", file=sys.stderr)
+
+
 def main():
     path = server.DATA / "state.md"
     text = path.read_text()
-    block = f"{START}\n{build(server.overview())}\n{END}"
+    o = server.overview()
+    block = f"{START}\n{build(o)}\n{END}"
     if "--print" in sys.argv:
         print(block)
         return
@@ -104,8 +170,15 @@ def main():
     st = json.loads(stamp.read_text()) if stamp.exists() else {}
     today = datetime.now().date().isoformat()
     if m and (datetime.now() - datetime.fromisoformat(m.group(1))).days > 7 and st.get("notified") != today:
-        subprocess.run(["osascript", "-e", 'display notification "state.md manual sections are over a week old: run the weekly review" with title "Personal manager"'], check=False)
+        notify.send("The weekly review is over a week old: state.md's manual sections need a look.", phone=True, key=f"review:{today}")
         st["notified"] = today
+    if not server.pm_env.DEMO:
+        try:
+            st["errors"] = alerts(o, datetime.now(), st.get("errors", []))
+            plugin_hourly()
+            notify.sweep()
+        except Exception as e:  # noqa: BLE001  (telling the user must never stop the refresh)
+            print(f"alerts failed: {e}", file=sys.stderr)
     st["ran_at"] = datetime.now().isoformat(timespec="seconds")
     stamp.write_text(json.dumps(st))
 

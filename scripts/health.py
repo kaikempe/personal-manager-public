@@ -135,6 +135,9 @@ def data_checks(now):
     m = age(parse_time(ms.get("last_ok")), now)
     if not ms and not (AGENTS / f"{P}.mail-suggest.plist").exists():
         pass   # mail suggestions are optional and not set up
+    elif ms and not ms.get("ok", True) and re.search(r"\b(usage|session|\d+-hour) limit\b", str(ms.get("error")), re.I):
+        # The model's usage limit, not a fault: unseen mails are retried every hour until it resets.
+        out.append(("warn", "Mail check", f"paused by the model's usage limit, retried hourly ({str(ms.get('error'))[:80]})"))
     elif ms and not ms.get("ok", True):
         out.append(("error", "Mail check", f"last run failed: {ms.get('error')}"))
     elif ms.get("offline_at"):
@@ -179,9 +182,28 @@ def data_checks(now):
         out.append(("ok" if m is not None and m <= limit else "warn", name, f"log written {ago(m)}"))
 
     gp = read_json(DATA / "gym_proposals.json", {}) or {}
-    open_gp = [p for p in gp.get("proposals", []) if p.get("status") == "new"] if isinstance(gp, dict) else []
+    open_gp = [p for p in gp.get("proposals", []) if p.get("status") == "pending"] if isinstance(gp, dict) else []
     if open_gp:
-        out.append(("ok", "Gym proposals", f"{len(open_gp)} weight change(s) waiting on the Gym page"))
+        out.append(("ok", "Gym proposals", f"{len(open_gp)} weight change(s) waiting on the Gym page and in the phone app"))
+    return out
+
+
+def plugin_checks():
+    """Rows from plugins that define CHECKS() -> [(level, name, detail)] (plugins/README.md). A plugin that fails
+    is one warning row, never a crash."""
+    if pm_env.DEMO:
+        return []
+    try:
+        import plugins_load
+        hooks = plugins_load.each("CHECKS")
+    except Exception as e:  # noqa: BLE001
+        return [("warn", "Plugins", f"could not load: {str(e)[:120]}")]
+    out = []
+    for mod, fn in hooks:
+        try:
+            out += [(str(lv), str(n), str(d)) for lv, n, d in fn() if lv in ("ok", "warn", "error")]
+        except Exception as e:  # noqa: BLE001
+            out.append(("warn", f"Plugin {mod.__name__.replace('pm_plugin_', '')}", f"check failed: {str(e)[:120]}"))
     return out
 
 
@@ -211,7 +233,7 @@ def phone_checks():
 
 def checks(now=None):
     now = now or datetime.now().astimezone()
-    rows = job_checks(launchctl()) + data_checks(now) + phone_checks()
+    rows = job_checks(launchctl()) + data_checks(now) + phone_checks() + plugin_checks()
     return [{"level": lv, "name": n, "detail": d} for lv, n, d in rows]
 
 

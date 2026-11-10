@@ -3,6 +3,7 @@
 
     python3 scripts/add_gym.py            # dry run: print the plan and what would change
     python3 scripts/add_gym.py --write    # apply it
+    python3 scripts/add_gym.py --auto     # what the gym job runs: apply only when data/calendar.json shows a difference
 
 Rules (items.json gym-weekly holds the data; classes are the events in PM_CLASS_CALENDARS):
   - Sessions in order: Day 1 chest/biceps (usually Mon), Day 2 back/triceps (Tue), Day 3 arms/shoulders (Thu), Day 4 legs (Fri).
@@ -12,10 +13,18 @@ Rules (items.json gym-weekly holds the data; classes are the events in PM_CLASS_
   - Never more than 2 gym days in a row; from a longer run the lowest priority is dropped (Day 3, then 2, then 1).
   - Nothing special per weekday: with Monday off this gives Tue Day 1, Wed Day 2, Fri legs.
   - A week with no class at all (holidays): no gym.
+  - A day with an event whose title matches PM_OFF_CAMPUS (default: "Online day", "Off campus", "No campus"), in any
+    calendar, has no in-person class: its classes are attended from home. Add such an all-day event to skip a day
+    (a strike, a sick day); the session moves by the rules above.
 
 Never deletes. Events this script made carry a marker in their notes; when the plan changes, such
 an event is moved or renamed to the new slot instead. Nothing else in the calendar is touched. An
 event that is no longer needed is reported, and the user deletes it by hand. Safe to re-run.
+
+--auto (PM_GYM_AUTOSYNC=1, from scripts/gym_ingest.py): a class that moves, or a new "Online day", changes the plan,
+and the events used to stay where they were until someone re-ran --write. The job now compares the plan with
+data/calendar.json (no AppleScript) and applies it only when they differ and the export is fresh; what it moved,
+created or no longer needs is sent to the user (scripts/notify.py).
 """
 import json
 import re
@@ -33,6 +42,8 @@ CALENDAR = pm_env.WRITE_CALENDAR
 FEED, VISIBLE = (pm_env.CLASS_CALENDARS + ["", ""])[:2]
 CLASS_TITLE = re.compile(pm_env.get("PM_CLASS_TITLE", "."), re.I)
 CLASS_SKIP = re.compile(pm_env.get("PM_CLASS_SKIP"), re.I) if pm_env.get("PM_CLASS_SKIP") else None
+OFF_CAMPUS = re.compile(pm_env.setting("PM_OFF_CAMPUS"), re.I) if pm_env.setting("PM_OFF_CAMPUS") else None
+OFF_DAYS = {}   # date -> title of the event that says so; filled by class_ends()
 WEEKS = 4
 DURATION = timedelta(minutes=90)
 GAP = timedelta(minutes=10)
@@ -45,6 +56,22 @@ def gym_item():
 
 
 FIRST_DAY = ""
+
+
+def off_days(events):
+    """{date: event title} for every day covered by an event whose title matches PM_OFF_CAMPUS."""
+    out = {}
+    for e in events:
+        if not (OFF_CAMPUS and OFF_CAMPUS.search(e.get("title") or "")):
+            continue
+        d = date.fromisoformat(e["start"][:10])
+        last = max(d, date.fromisoformat((e.get("end") or e["start"])[:10]))
+        if not e.get("all_day") and last > d and (e.get("end") or "")[11:16] == "00:00":
+            last -= timedelta(days=1)   # a timed event ending at midnight does not reach into the next day
+        while d <= last and len(out) < 60:
+            out[d.isoformat()] = e["title"].strip()
+            d += timedelta(days=1)
+    return out
 
 
 def class_ends():
@@ -76,6 +103,10 @@ def class_ends():
             continue
         day = e["start"][:10]
         ends[day] = max(ends.get(day, end), end)
+    OFF_DAYS.clear()
+    OFF_DAYS.update(off_days(cal["events"]))
+    for day in OFF_DAYS:   # at home that day: no class to come from, so no gym and no "after class" slot
+        ends.pop(day, None)
     last_day = max((e["start"][:10] for e in cal["events"] if not e["all_day"]), default="")
     global FIRST_DAY
     # The export's own window start, not its first event: on 2026-11-09 (Mon, no class, first event Tue) the first-event
@@ -91,6 +122,9 @@ def plan():
     ends, generated, last_day = class_ends()
     today = date.today()
     out, notes = [], []
+    for day, title in sorted(OFF_DAYS.items()):
+        if day >= today.isoformat():
+            notes.append(f'{date.fromisoformat(day):%a %d %b}: "{title}" in the calendar, so no in-person class and no gym')
     first_monday = today - timedelta(days=today.weekday())
     for w in range(WEEKS + 1):
         monday = first_monday + timedelta(weeks=w)
@@ -165,7 +199,8 @@ def as_date(var, v):
             f'set month of {var} to {v.month}\nset day of {var} to {v.day}\nset time of {var} to {v.hour * 3600 + v.minute * 60}\n')
 
 
-def existing():
+def existing_slow():
+    """Ask Calendar for every event carrying the marker. Takes minutes on a full calendar (measured 2026-11-10: 4-5 min)."""
     out = osa(f'''tell application "Calendar"
 set res to ""
 repeat with e in (every event of calendar "{CALENDAR}" whose description is "{MARKER}")
@@ -181,6 +216,21 @@ end tell''')
     return evs
 
 
+def existing(max_age=timedelta(minutes=20)):
+    """This script's events in the calendar. Read from the export when it is fresh (instant); such an event has no
+    uid here and is addressed by its exact title and start instead. A stale export falls back to asking Calendar."""
+    try:
+        cal = json.loads((ROOT / "data/calendar.json").read_text())
+        fresh = datetime.now().astimezone() - datetime.fromisoformat(cal["generated_at"]) < max_age
+    except (OSError, ValueError, KeyError):
+        fresh = False
+    if not fresh:
+        return existing_slow()
+    return [{"uid": None, "start": datetime.fromisoformat(e["start"]).replace(tzinfo=None), "title": e["title"]}
+            for e in cal["events"]
+            if e["calendar"] == CALENDAR and not e["all_day"] and MARKER in (e.get("notes") or "")]
+
+
 def create(ev):
     osa(f'''tell application "Calendar"
 set c to calendar "{CALENDAR}"
@@ -188,10 +238,18 @@ set c to calendar "{CALENDAR}"
 end tell''')
 
 
-def move(uid, ev):
+def move(h, ev):
+    """Move (and rename) one of this script's events to the planned slot. `h` is a row from existing(): found by uid,
+    or by exact title and start, and then only when exactly one event matches."""
+    if h.get("uid"):
+        find = f'set m to first event of c whose uid is "{h["uid"]}"'
+    else:
+        find = (as_date("o", h["start"]) + f'set found to (every event of c whose summary is "{h["title"]}" and start date is o)\n'
+                'if (count of found) is not 1 then error "gym event not found exactly once: " & (count of found)\n'
+                "set m to item 1 of found")
     osa(f'''tell application "Calendar"
 set c to calendar "{CALENDAR}"
-{as_date("s", ev["start"])}{as_date("e", ev["end"])}set m to first event of c whose uid is "{uid}"
+{as_date("s", ev["start"])}{as_date("e", ev["end"])}{find}
 set summary of m to "{ev["title"]}"
 if (start date of m) < s then
 set end date of m to e
@@ -226,7 +284,59 @@ def sync(events):
     return moves, creates, have  # `have` is now: ours, no longer needed
 
 
+def drift(events, cal_events, today):
+    """(missing, extra): planned sessions that are not in the exported calendar, and this script's own events there
+    that the plan no longer has. Pure; reads the export, not Calendar."""
+    want = {(ev["start"].isoformat(timespec="minutes"), ev["title"]) for ev in events}
+    have = {(e["start"][:16], e["title"]) for e in cal_events
+            if e["calendar"] == CALENDAR and MARKER in (e.get("notes") or "") and e["start"][:10] >= today.isoformat()}
+    return sorted(want - have), sorted(have - want)
+
+
+def auto():
+    """The unattended run. Does nothing unless the export is fresh, ok, and differs from the plan."""
+    if pm_env.setting("PM_GYM_AUTOSYNC") != "1" or pm_env.DEMO:
+        return
+    cal = json.loads((ROOT / "data/calendar.json").read_text())
+    try:
+        status = json.loads((ROOT / "data/export_status.json").read_text())
+    except (OSError, ValueError):
+        status = {}
+    age = datetime.now().astimezone() - datetime.fromisoformat(cal["generated_at"])
+    if not status.get("ok") or age > timedelta(minutes=60):
+        return   # never move events on the word of a stale or failed export
+    events, _, _ = plan()
+    missing, extra = drift(events, cal["events"], date.today())
+    stamp = ROOT / "data/gym_autosync.json"
+    key = json.dumps([missing, extra])
+    try:
+        last = json.loads(stamp.read_text())
+    except (OSError, ValueError):
+        last = {}
+    if not (missing or extra):
+        return
+    # The export lags a write by up to 15 minutes: the same difference twice in a row was already handled.
+    if last.get("key") == key and datetime.now() - datetime.fromisoformat(last["at"]) < timedelta(minutes=40):
+        return
+    moves, creates, unused = sync(events)
+    for h, ev in moves:
+        move(h, ev)
+    for ev in creates:
+        create(ev)
+    stamp.write_text(json.dumps({"key": key, "at": datetime.now().isoformat(timespec="seconds")}))
+    lines = [f'{h["start"]:%a %-d %b %H:%M} → {ev["start"]:%a %-d %b %H:%M} {ev["title"].split(" ", 2)[-1]}' for h, ev in moves]
+    lines += [f'new {ev["start"]:%a %-d %b %H:%M} {ev["title"].split(" ", 2)[-1]}' for ev in creates]
+    lines += [f'not needed any more, delete it: {h["start"]:%a %-d %b %H:%M} {h["title"]}' for h in unused]
+    if lines:
+        import notify
+        text = "Gym plan changed: " + "; ".join(lines)
+        print(text)
+        notify.send(text, phone=True, key="gym-sync:" + key)
+
+
 def main():
+    if "--auto" in sys.argv:
+        return auto()
     write = "--write" in sys.argv
     events, notes, generated = plan()
     print(f"calendar export: {generated}")
@@ -248,7 +358,7 @@ def main():
         print("\ndry run. Re-run with --write to apply.")
         return
     for h, ev in moves:
-        move(h["uid"], ev)
+        move(h, ev)
     for ev in creates:
         create(ev)
     print(f"\nmoved {len(moves)}, created {len(creates)}, left for you to delete {len(unused)}")

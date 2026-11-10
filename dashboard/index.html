@@ -782,7 +782,7 @@ const V = {
   },
   upcoming() {
     const byId = Object.fromEntries(D.items.map(i => [i.id, i]));
-    const rows = D.bb.deadlines.map(d => ({when: d.due, title: d.title, sub: [nice(d.course || ''), d.note].filter(Boolean).join(' · '), dl: true}));
+    const rows = D.bb.deadlines.map(d => ({when: d.due, title: d.title, sub: [nice(d.course || ''), d.note, d.flag].filter(Boolean).join(' · '), dl: true}));
     for (const i of D.items) if (i.type === 'task' && i.status !== 'done') {
       const blocked = i.blocked_by && byId[i.blocked_by]?.status !== 'done';
       rows.push({when: i.due || i.start || '9999', title: i.title, sub: [blocked ? 'Waiting on ' + byId[i.blocked_by].title : '', i.notes].filter(Boolean).join(' · '), id: i.id});
